@@ -70,41 +70,43 @@ def get_birthday_left():
 def send_message():
     access_token = get_access_token()
     if not access_token:
-        print("❌ 获取 token 失败，请检查 APP_ID 和 APP_SECRET")
+        print("❌ 获取 token 失败")
         return False
     
     weather = get_weather()
     caihongpi = get_caihongpi()
     love_days = get_love_days()
     birthday_left = get_birthday_left()
+    today_str = date.today().strftime("%Y年%m月%d日")
     
-    print(f"天气: {weather}")
-    print(f"恋爱天数: {love_days}")
-    print(f"距生日: {birthday_left}天")
-    print(f"情话: {caihongpi}")
+    print("========== 调试开始 ==========")
+    print(f"日期: [{today_str}]")
+    print(f"城市: [{CITY_NAME}]")
+    print(f"天气: [{weather['weather']}]")
+    print(f"情话: [{caihongpi}]")
+    print(f"恋爱天数: [{love_days}]")
+    print(f"距生日: [{birthday_left}]")
+    print("========== 调试结束 ==========")
     
     url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
     data = {
         "touser": OPEN_ID,
         "template_id": TEMPLATE_ID,
         "data": {
-            "date": {"value": date.today().strftime("%Y年%m月%d日")},
+            "date": {"value": today_str},
             "city": {"value": CITY_NAME},
             "weather": {"value": weather["weather"]},
             "low": {"value": weather["low"]},
             "high": {"value": weather["high"]},
-            "love_days": {"value": str(love_days), "color": "#FF69B4"},
-            "birthday_left": {"value": str(birthday_left), "color": "#FF69B4"},
-            "caihongpi": {"value": caihongpi, "color": "#FF69B4"},
+            "love_days": {"value": str(love_days)},
+            "birthday_left": {"value": str(birthday_left)},
+            "caihongpi": {"value": caihongpi},
         }
     }
     
     res = requests.post(url, json=data, timeout=10).json()
-    if res.get("errcode") == 0:
-        print("✅ 发送成功！")
-        return True
-    else:
-        print(f"❌ 发送失败：{res}")
+    print(f"微信返回: {res}")
+    return res.get("errcode") == 0
         return False
 
 
