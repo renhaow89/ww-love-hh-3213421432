@@ -22,38 +22,41 @@ def get_access_token():
 
 
 def get_weather():
+    """获取天气（tianapi国内数据源，更准确）"""
     try:
-        url = f"https://wttr.in/{CITY_NAME}?format=j1&lang=zh"
+        url = f"https://apis.tianapi.com/tianqi/index?key={TIANAPI_KEY}&city={CITY_NAME}"
         res = requests.get(url, timeout=10).json()
-        today = res["weather"][0]
-        weather_desc = today["lang_zh"][0]["value"] if "lang_zh" in today else today["weatherDesc"][0]["value"]
-        return {
-            "weather": weather_desc,
-            "low": today["mintempC"] + "℃",
-            "high": today["maxtempC"] + "℃",
-        }
+        if res.get("code") == 200:
+            data = res["result"]
+            return {
+                "weather": data["weather"],
+                "low": data["lowest"] + "℃",
+                "high": data["highest"] + "℃",
+            }
     except Exception as e:
         print(f"天气获取失败: {e}")
-        return {"weather": "晴", "low": "20℃", "high": "30℃"}
+    return {"weather": "晴", "low": "20℃", "high": "30℃"}
 
 
 def get_caihongpi():
+    """获取彩虹屁情话"""
     try:
         url = f"https://apis.tianapi.com/caihongpi/index?key={TIANAPI_KEY}"
         res = requests.get(url, timeout=10).json()
-        print(f"彩虹屁返回: {res}")
         if res.get("code") == 200:
             return res["result"]["content"]
     except Exception as e:
-        print(f"彩虹屁异常: {e}")
+        print(f"情话获取失败: {e}")
     return "今天也超级喜欢你！"
 
 
 def get_love_days():
+    """计算恋爱天数"""
     return (date.today() - LOVE_DATE).days
 
 
 def get_birthday_left():
+    """计算距离下次农历生日还有多少天"""
     today = date.today()
     try:
         birthday = ZhDate(today.year, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2]).to_datetime().date()
@@ -79,34 +82,35 @@ def send_message():
     birthday_left = get_birthday_left()
     today_str = date.today().strftime("%Y年%m月%d日")
 
-    print("========== 调试开始 ==========")
-    print(f"日期: [{today_str}]")
-    print(f"城市: [{CITY_NAME}]")
-    print(f"天气: [{weather['weather']}]")
-    print(f"情话: [{caihongpi}]")
-    print(f"恋爱天数: [{love_days}]")
-    print(f"距生日: [{birthday_left}]")
-    print("========== 调试结束 ==========")
+    print(f"日期: {today_str}")
+    print(f"天气: {weather}")
+    print(f"情话: {caihongpi}")
+    print(f"恋爱天数: {love_days}")
+    print(f"距生日: {birthday_left}天")
 
     url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
     data = {
         "touser": OPEN_ID,
         "template_id": TEMPLATE_ID,
         "data": {
-            "date": {"value": today_str},
-            "city": {"value": CITY_NAME},
-            "weather": {"value": weather["weather"]},
-            "low": {"value": weather["low"]},
-            "high": {"value": weather["high"]},
-            "love_days": {"value": str(love_days)},
-            "birthday_left": {"value": str(birthday_left)},
-            "caihongpi": {"value": caihongpi},
+            "riqi": {"value": today_str, "color": "#333333"},
+            "city": {"value": CITY_NAME, "color": "#333333"},
+            "weather": {"value": weather["weather"], "color": "#333333"},
+            "low": {"value": weather["low"], "color": "#333333"},
+            "high": {"value": weather["high"], "color": "#333333"},
+            "love_days": {"value": str(love_days), "color": "#FF69B4"},
+            "birthday_left": {"value": str(birthday_left), "color": "#FF69B4"},
+            "qinghua": {"value": caihongpi, "color": "#FF69B4"},
         }
     }
 
     res = requests.post(url, json=data, timeout=10).json()
-    print(f"微信返回: {res}")
-    return res.get("errcode") == 0
+    if res.get("errcode") == 0:
+        print("✅ 发送成功！")
+        return True
+    else:
+        print(f"❌ 发送失败: {res}")
+        return False
 
 
 if __name__ == "__main__":
