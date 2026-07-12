@@ -22,17 +22,16 @@ def get_access_token():
 
 
 def get_weather():
-    """获取天气（tianapi国内数据源）"""
+    """获取天气（tianapi国内数据源，更准确）"""
     try:
-        url = f"https://apis.tianapi.com/tianqi/index?key={TIANAPI_KEY}&city={CITY_NAME}"
+        url = f"https://apis.tianapi.com/tianqi/index?key={TIANAPI_KEY}&city={CITY_NAME}&type=1"
         res = requests.get(url, timeout=10).json()
-        print(f"天气API完整返回: {res}")
         if res.get("code") == 200:
             data = res["result"]
             return {
                 "weather": data["weather"],
-                "low": data["lowest"] + "℃",
-                "high": data["highest"] + "℃",
+                "low": data["lowest"],
+                "high": data["highest"],
             }
     except Exception as e:
         print(f"天气获取异常: {e}")
@@ -82,7 +81,7 @@ def send_message():
     today_str = date.today().strftime("%Y年%m月%d日")
 
     print(f"日期: {today_str}")
-    print(f"天气最终值: {weather}")
+    print(f"天气: {weather}")
     print(f"情话: {caihongpi}")
 
     url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
