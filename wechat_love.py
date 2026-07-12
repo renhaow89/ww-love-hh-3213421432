@@ -22,7 +22,6 @@ def get_access_token():
 
 
 def get_weather():
-    """获取天气（免费接口，无需注册）"""
     try:
         url = f"https://wttr.in/{CITY_NAME}?format=j1&lang=zh"
         res = requests.get(url, timeout=10).json()
@@ -42,10 +41,11 @@ def get_caihongpi():
     try:
         url = f"https://apis.tianapi.com/caihongpi/index?key={TIANAPI_KEY}"
         res = requests.get(url, timeout=10).json()
+        print(f"彩虹屁返回: {res}")
         if res.get("code") == 200:
             return res["result"]["content"]
-    except:
-        pass
+    except Exception as e:
+        print(f"彩虹屁异常: {e}")
     return "今天也超级喜欢你！"
 
 
@@ -72,13 +72,13 @@ def send_message():
     if not access_token:
         print("❌ 获取 token 失败")
         return False
-    
+
     weather = get_weather()
     caihongpi = get_caihongpi()
     love_days = get_love_days()
     birthday_left = get_birthday_left()
     today_str = date.today().strftime("%Y年%m月%d日")
-    
+
     print("========== 调试开始 ==========")
     print(f"日期: [{today_str}]")
     print(f"城市: [{CITY_NAME}]")
@@ -87,7 +87,7 @@ def send_message():
     print(f"恋爱天数: [{love_days}]")
     print(f"距生日: [{birthday_left}]")
     print("========== 调试结束 ==========")
-    
+
     url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
     data = {
         "touser": OPEN_ID,
@@ -103,11 +103,10 @@ def send_message():
             "caihongpi": {"value": caihongpi},
         }
     }
-    
+
     res = requests.post(url, json=data, timeout=10).json()
     print(f"微信返回: {res}")
     return res.get("errcode") == 0
-        return False
 
 
 if __name__ == "__main__":
