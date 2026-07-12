@@ -4,14 +4,13 @@ import os
 from datetime import date
 from zhdate import ZhDate
 
-# 从环境变量读取配置（安全，不会泄露）
+# 从环境变量读取配置
 APP_ID = os.environ.get("APP_ID")
 APP_SECRET = os.environ.get("APP_SECRET")
 OPEN_ID = os.environ.get("OPEN_ID")
 TEMPLATE_ID = os.environ.get("TEMPLATE_ID")
 TIANAPI_KEY = os.environ.get("TIANAPI_KEY")
 
-CITY_CODE = "101210101"
 CITY_NAME = "杭州"
 LOVE_DATE = date(2019, 3, 10)
 BIRTHDAY_LUNAR = (1998, 8, 18)
@@ -19,27 +18,34 @@ BIRTHDAY_LUNAR = (1998, 8, 18)
 
 def get_access_token():
     url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={APP_ID}&secret={APP_SECRET}"
-    return requests.get(url).json().get("access_token")
+    return requests.get(url, timeout=10).json().get("access_token")
 
 
 def get_weather():
-    url = f"http://wthrcdn.etouch.cn/weather_mini?citykey={CITY_CODE}"
-    res = requests.get(url).json()
-    if res.get("status") == 1000:
-        today = res["data"]["forecast"][0]
+    """获取天气（免费接口，无需注册）"""
+    try:
+        url = f"https://wttr.in/{CITY_NAME}?format=j1&lang=zh"
+        res = requests.get(url, timeout=10).json()
+        today = res["weather"][0]
+        weather_desc = today["lang_zh"][0]["value"] if "lang_zh" in today else today["weatherDesc"][0]["value"]
         return {
-            "weather": today["type"],
-            "low": today["low"].replace("低温 ", ""),
-            "high": today["high"].replace("高温 ", ""),
+            "weather": weather_desc,
+            "low": today["mintempC"] + "℃",
+            "high": today["maxtempC"] + "℃",
         }
-    return {"weather": "未知", "low": "未知", "high": "未知"}
+    except Exception as e:
+        print(f"天气获取失败: {e}")
+        return {"weather": "晴", "low": "20℃", "high": "30℃"}
 
 
 def get_caihongpi():
-    url = f"https://apis.tianapi.com/caihongpi/index?key={TIANAPI_KEY}"
-    res = requests.get(url).json()
-    if res.get("code") == 200:
-        return res["result"]["content"]
+    try:
+        url = f"https://apis.tianapi.com/caihongpi/index?key={TIANAPI_KEY}"
+        res = requests.get(url, timeout=10).json()
+        if res.get("code") == 200:
+            return res["result"]["content"]
+    except:
+        pass
     return "今天也超级喜欢你！"
 
 
@@ -64,11 +70,18 @@ def get_birthday_left():
 def send_message():
     access_token = get_access_token()
     if not access_token:
-        print("❌ 获取 token 失败")
+        print("❌ 获取 token 失败，请检查 APP_ID 和 APP_SECRET")
         return False
     
     weather = get_weather()
     caihongpi = get_caihongpi()
+    love_days = get_love_days()
+    birthday_left = get_birthday_left()
+    
+    print(f"天气: {weather}")
+    print(f"恋爱天数: {love_days}")
+    print(f"距生日: {birthday_left}天")
+    print(f"情话: {caihongpi}")
     
     url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
     data = {
@@ -80,18 +93,18 @@ def send_message():
             "weather": {"value": weather["weather"]},
             "low": {"value": weather["low"]},
             "high": {"value": weather["high"]},
-            "love_days": {"value": str(get_love_days()), "color": "#FF69B4"},
-            "birthday_left": {"value": str(get_birthday_left()), "color": "#FF69B4"},
+            "love_days": {"value": str(love_days), "color": "#FF69B4"},
+            "birthday_left": {"value": str(birthday_left), "color": "#FF69B4"},
             "caihongpi": {"value": caihongpi, "color": "#FF69B4"},
         }
     }
     
-    res = requests.post(url, json=data).json()
+    res = requests.post(url, json=data, timeout=10).json()
     if res.get("errcode") == 0:
         print("✅ 发送成功！")
         return True
     else:
-        print(f"❌ 失败：{res}")
+        print(f"❌ 发送失败：{res}")
         return False
 
 
