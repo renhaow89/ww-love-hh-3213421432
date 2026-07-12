@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import requests
 import os
-from datetime import date
+from datetime import datetime, timedelta, date
 from zhdate import ZhDate
 
 # 从环境变量读取配置
@@ -16,13 +16,19 @@ LOVE_DATE = date(2019, 3, 10)
 BIRTHDAY_LUNAR = (1998, 8, 18)
 
 
+def get_beijing_today():
+    """获取北京时间的日期（UTC+8）"""
+    utc_now = datetime.utcnow()
+    beijing_now = utc_now + timedelta(hours=8)
+    return beijing_now.date()
+
+
 def get_access_token():
     url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={APP_ID}&secret={APP_SECRET}"
     return requests.get(url, timeout=10).json().get("access_token")
 
 
 def get_weather():
-    """获取天气（tianapi国内数据源，更准确）"""
     try:
         url = f"https://apis.tianapi.com/tianqi/index?key={TIANAPI_KEY}&city={CITY_NAME}&type=1"
         res = requests.get(url, timeout=10).json()
@@ -39,7 +45,6 @@ def get_weather():
 
 
 def get_caihongpi():
-    """获取彩虹屁情话"""
     try:
         url = f"https://apis.tianapi.com/caihongpi/index?key={TIANAPI_KEY}"
         res = requests.get(url, timeout=10).json()
@@ -51,11 +56,11 @@ def get_caihongpi():
 
 
 def get_love_days():
-    return (date.today() - LOVE_DATE).days
+    return (get_beijing_today() - LOVE_DATE).days
 
 
 def get_birthday_left():
-    today = date.today()
+    today = get_beijing_today()
     try:
         birthday = ZhDate(today.year, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2]).to_datetime().date()
     except:
@@ -78,9 +83,9 @@ def send_message():
     caihongpi = get_caihongpi()
     love_days = get_love_days()
     birthday_left = get_birthday_left()
-    today_str = date.today().strftime("%Y年%m月%d日")
+    today_str = get_beijing_today().strftime("%Y年%m月%d日")
 
-    print(f"日期: {today_str}")
+    print(f"北京时间日期: {today_str}")
     print(f"天气: {weather}")
     print(f"情话: {caihongpi}")
 
