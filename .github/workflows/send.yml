@@ -1,0 +1,31 @@
+name: 每日早安推送
+
+on:
+  schedule:
+    # 每天早上7点发送（UTC时间，北京时间减8小时，所以写 23:00 就是早上7点）
+    - cron: '0 23 * * *'
+  workflow_dispatch:  # 允许手动点击测试
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 设置Python环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: 安装依赖
+        run: |
+          pip install requests zhdate
+      
+      - name: 发送消息
+        env:
+          APP_ID: ${{ secrets.APP_ID }}
+          APP_SECRET: ${{ secrets.APP_SECRET }}
+          OPEN_ID: ${{ secrets.OPEN_ID }}
+          TEMPLATE_ID: ${{ secrets.TEMPLATE_ID }}
+          TIANAPI_KEY: ${{ secrets.TIANAPI_KEY }}
+        run: python wechat_love.py
