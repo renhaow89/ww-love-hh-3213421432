@@ -3,7 +3,7 @@ name: 每日早安推送
 on:
   schedule:
     # 避开00:00整点高峰，改为UTC时间 23:35，对应北京时间次日早上 07:35
-    - cron: '30 1 * * *'
+    - cron: '26 11 * * *'
   workflow_dispatch:  # 允许手动点击测试
 
 jobs:
