@@ -1,16 +1,16 @@
-name: Schedule Test 
+name: Schedule Test
 
 on:
-  schedule:
-    - cron: '44 8 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Print Time
+      - name: Test Schedule
         run: |
-          echo "GitHub Schedule Works!"
+          echo "Schedule is working"
           date
