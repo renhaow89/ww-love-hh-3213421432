@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta, date
 from zhdate import ZhDate
 
-# 从环境变量读取配置
+# 从环境变量读取配置（GitHub Secrets存放）
 APP_ID = os.environ.get("APP_ID")
 APP_SECRET = os.environ.get("APP_SECRET")
 OPEN_ID = os.environ.get("OPEN_ID")
@@ -17,18 +17,20 @@ BIRTHDAY_LUNAR = (1998, 8, 18)
 
 
 def get_beijing_today():
-    """获取北京时间的日期（UTC+8）"""
+    """获取北京时间日期，解决GitHub UTC时区偏差"""
     utc_now = datetime.utcnow()
     beijing_now = utc_now + timedelta(hours=8)
     return beijing_now.date()
 
 
 def get_access_token():
+    """获取微信access_token"""
     url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={APP_ID}&secret={APP_SECRET}"
     return requests.get(url, timeout=10).json().get("access_token")
 
 
 def get_weather():
+    """TianAPI 实时天气 type=1"""
     try:
         url = f"https://apis.tianapi.com/tianqi/index?key={TIANAPI_KEY}&city={CITY_NAME}&type=1"
         res = requests.get(url, timeout=10).json()
@@ -45,6 +47,7 @@ def get_weather():
 
 
 def get_caihongpi():
+    """获取彩虹屁情话"""
     try:
         url = f"https://apis.tianapi.com/caihongpi/index?key={TIANAPI_KEY}"
         res = requests.get(url, timeout=10).json()
@@ -56,10 +59,12 @@ def get_caihongpi():
 
 
 def get_love_days():
+    """恋爱总天数"""
     return (get_beijing_today() - LOVE_DATE).days
 
 
 def get_birthday_left():
+    """计算距离农历生日剩余天数"""
     today = get_beijing_today()
     try:
         birthday = ZhDate(today.year, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2]).to_datetime().date()
@@ -89,6 +94,11 @@ def send_message():
     print(f"天气: {weather}")
     print(f"情话: {caihongpi}")
 
+    # 核心切片逻辑：利用Python切片特性，每18个字符截取一段，规避微信20字截断限制
+    q1 = caihongpi[:18]
+    q2 = caihongpi[18:36]
+    q3 = caihongpi[36:54]
+
     url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
     data = {
         "touser": OPEN_ID,
@@ -101,7 +111,9 @@ def send_message():
             "high": {"value": weather["high"], "color": "#333333"},
             "love_days": {"value": str(love_days), "color": "#FF69B4"},
             "birthday_left": {"value": str(birthday_left), "color": "#FF69B4"},
-            "qinghua": {"value": caihongpi, "color": "#FF69B4"},
+            "qinghua1": {"value": q1, "color": "#FF69B4"},
+            "qinghua2": {"value": q2, "color": "#FF69B4"},
+            "qinghua3": {"value": q3, "color": "#FF69B4"},
         }
     }
 
