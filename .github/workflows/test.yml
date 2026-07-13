@@ -1,9 +1,9 @@
 name: Schedule Test
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 * * * *"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -12,5 +12,5 @@ jobs:
     steps:
       - name: Test Schedule
         run: |
-          echo "Schedule is working"
+          echo "Schedule works"
           date
