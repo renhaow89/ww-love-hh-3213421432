@@ -1,0 +1,14 @@
+name: Schedule Check
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check
+        run: echo "schedule ok"
