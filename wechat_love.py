@@ -260,7 +260,7 @@ def send_message():
     
     # 构建随机寄语节点并执行强行切片，规避顶层截断机制
     random_greeting = random.choice(DAILY_GREETINGS)
-    full_top_str = f"早安，我最爱的宝宝！{random_greeting}"
+    full_top_str = f"安安，我最爱的宝宝！{random_greeting}"
     top1 = full_top_str[:18]
     top2 = full_top_str[18:36]
 
