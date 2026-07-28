@@ -2,6 +2,7 @@
 import requests
 import os
 import random
+import json
 from datetime import datetime, timedelta, date
 from zhdate import ZhDate
 
@@ -26,52 +27,43 @@ HOLIDAY_LUNAR = {
     (1, 1): "春节", (5, 5): "端午节", (7, 7): "七夕节", 
     (8, 15): "中秋节", (12, 8): "腊八节", (12, 24): "南方小年"
 }
+
+# 节日专属 Emoji 映射字典
+HOLIDAY_EMOJI_MAP = {
+    "春节": "🧨", "情人节": "🌹", "圣诞节": "🎄", "跨年": "🎉", 
+    "元旦": "🎆", "女神节": "👑", "520表白日": "💖", "七夕节": "💕", 
+    "儿童节": "🍭", "中秋节": "🥮", "恋爱纪念日": "🥂", "生日": "🎂"
+}
+
 DAILY_GREETINGS = [
-    "今天也要记得吃早餐哦 ❤️", 
-    "工作再忙，也别忘了照顾自己。", 
-    "希望今天一切顺顺利利。", 
-    "今天也会是幸运的一天。", 
-    "不要太累啦，记得按时休息。", 
-    "希望今天能有很多开心的小事情发生。"
+    "今天也要记得吃早餐哦 ❤️", "工作再忙，也别忘了照顾自己。", 
+    "希望今天一切顺顺利利。", "今天也会是幸运的一天。", 
+    "不要太累啦，记得按时休息。", "希望今天能有很多开心的小事情发生。"
 ]
+
 FRIDAY_GREETINGS = [
-    "今天是周五啦！马上就能过周末咯 🎉",
-    "终于周五了！今晚想想吃点什么好吃的 🍖",
-    "打工人的最后一天！周末已经在向你招手 👋",
-    "周五早安！提前祝宝宝周末愉快哦 ❤️",
-    "美丽的周五，连空气都充满了放假的快乐味道 ✨",
-    "坚持一下，今天下班就可以尽情放松啦 🎮",
-    "周五到了，本周的疲惫即将清零 🔋",
-    "今天是充满希望的周五，要开心度过哦 😊"
+    "今天是周五啦！马上就能过周末咯 🎉", "终于周五了！今晚想想吃点什么好吃的 🍖",
+    "打工人的最后一天！周末已经在向你招手 👋", "周五早安！提前祝宝宝周末愉快哦 ❤️",
+    "美丽的周五，连空气都充满了放假的快乐味道 ✨", "坚持一下，今天下班就可以尽情放松啦 🎮",
+    "周五到了，本周的疲惫即将清零 🔋", "今天是充满希望的周五，要开心度过哦 😊"
 ]
 
 # ==================== 时间引擎 ====================
 def get_beijing_today():
-    """获取修正时区后的北京时间"""
     return (datetime.utcnow() + timedelta(hours=8)).date()
 
 def get_love_days():
-    """计算恋爱天数"""
     return (get_beijing_today() - LOVE_DATE).days
 
 def _get_safe_lunar_date(year, l_month, l_day):
-    """
-    农历日期安全解析引擎
-    机制：应对农历大小月问题。若目标日（如30日）在当月不存在，自动递减至该月实际最后一天（29日）。
-    """
     for day_offset in range(l_day, l_day - 3, -1):
         try:
             return ZhDate(year, l_month, day_offset).to_datetime().date()
         except Exception:
             continue
-    # 极端异常兜底，强制转换为该年1月1日，避免返回破坏性魔法数据
     return date(year, 1, 1)
 
 def _get_safe_solar_date(year, month, day):
-    """
-    公历日期安全解析引擎
-    机制：拦截闰年 2月29日 在平年的 ValueError，自动降级为 2月28日。
-    """
     try:
         return date(year, month, day)
     except ValueError:
@@ -80,38 +72,33 @@ def _get_safe_solar_date(year, month, day):
 def get_birthday_left():
     today = get_beijing_today()
     bday = _get_safe_lunar_date(today.year, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2])
-    
-    # 如果今年的生日已经过了，计算明年的生日
     if bday < today:
         bday = _get_safe_lunar_date(today.year + 1, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2])
-        
     return (bday - today).days
 
 def get_qingming_date(year):
-    """计算清明节日期（利用世纪常数公式）"""
     y = year % 100
     day = int(y * 0.2422 + 4.81) - (y // 4)
     return date(year, 4, day)
 
 def get_next_lunar_date(today, lunar_month, lunar_day):
-    """获取下一个指定的农历日期"""
     t_date = _get_safe_lunar_date(today.year, lunar_month, lunar_day)
     if t_date < today:
         t_date = _get_safe_lunar_date(today.year + 1, lunar_month, lunar_day)
     return t_date
 
 def get_next_chuxi(today):
-    """计算下一个除夕日期"""
     sf_this_year = ZhDate(today.year, 1, 1).to_datetime().date()
     chuxi = sf_this_year - timedelta(days=1)
-    if chuxi >= today: 
-        return chuxi
+    if chuxi >= today: return chuxi
     return ZhDate(today.year + 1, 1, 1).to_datetime().date() - timedelta(days=1)
 
 def get_dynamic_holiday_str(today, birthday_left, love_days):
+    """
+    更新：现在返回一个元组 (用于展示的文案, 今天的具体节日名称)
+    如果今天不是节日，节日名称则返回 None
+    """
     candidates = {}
-    
-    # 1. 公历节日测算
     for m_d, name in HOLIDAY_SOLAR.items():
         m, d = map(int, m_d.split("-"))
         h_date = _get_safe_solar_date(today.year, m, d)
@@ -119,35 +106,31 @@ def get_dynamic_holiday_str(today, birthday_left, love_days):
             h_date = _get_safe_solar_date(today.year + 1, m, d)
         candidates[name] = (h_date - today).days
         
-    # 2. 清明节测算
     qm = get_qingming_date(today.year)
     if qm < today:
         qm = get_qingming_date(today.year + 1)
     candidates["清明节"] = (qm - today).days
     
-    # 3. 农历节日测算
     for (l_m, l_d), name in HOLIDAY_LUNAR.items():
         candidates[name] = (get_next_lunar_date(today, l_m, l_d) - today).days
     candidates["除夕"] = (get_next_chuxi(today) - today).days
 
-    # 4. 纪念日测算 (引入安全历法引擎防止闰年崩溃)
     anni = _get_safe_solar_date(today.year, LOVE_DATE.month, LOVE_DATE.day)
     if anni < today:
         anni = _get_safe_solar_date(today.year + 1, LOVE_DATE.month, LOVE_DATE.day)
     candidates["恋爱纪念日"] = (anni - today).days
 
-    # 5. 优先级匹配（当天节日直接返回）
     if birthday_left == 0: 
-        return "今天是小胡胡的农历生日！🎂"
+        return "今天是小胡胡的农历生日！🎂", "生日"
     if candidates.get("恋爱纪念日") == 0: 
-        return f"今天是恋爱 {love_days // 365} 周年纪念日！❤️"
+        return f"今天是恋爱 {love_days // 365} 周年纪念日！❤️", "恋爱纪念日"
+    
     for name, days in candidates.items():
         if days == 0: 
-            return f"今天是{name}快乐！❤️"
+            return f"今天是{name}快乐！❤️", name
         
-    # 6. 获取最近的下一个节日
     next_name, next_days = min(candidates.items(), key=lambda x: x[1])
-    return f"下个节日【{next_name}】还有 {next_days} 天 ⏳"
+    return f"下个节日【{next_name}】还有 {next_days} 天 ⏳", None
 
 # ==================== 文本计算 ====================
 def get_segmented_weather_tips(weather_info):
@@ -155,7 +138,6 @@ def get_segmented_weather_tips(weather_info):
     low_str = weather_info.get("low", "")
     high_str = weather_info.get("high", "")
     
-    # 默认兜底文案池（10个）
     default_tips = [
         ["今天天气不错哦，", "希望你这一天，", "都有好心情相伴 ❤️"],
         ["新的一天开始啦，", "不管天气怎么样，", "都要开开心心的 😊"],
@@ -258,7 +240,7 @@ def get_segmented_weather_tips(weather_info):
                 ["☁️ 云朵挡住了太阳，", "天气感觉挺凉爽的，", "是个舒服的好日子 🍃"],
                 ["🌤 多云转晴的心情，", "哪怕见不到太阳，", "我也在发光陪你 ✨"],
                 ["☁️ 阴天虽然没有阳光，", "但紫外线还是有的，", "出门别忘了涂防晒霜 🧴"],
-                ["🌤 天色稍微有点暗，", "但不要因此 emo 哦，", "想想开心的事情吧 💭"],
+                ["🌤 天色稍微有点暗，", "不要因此不开心哦，", "想想开心的事情吧 💭"],
                 ["☁️ 云层厚厚的天气，", "很适合在家里宅着，", "看看书追追剧 📖"],
                 ["🌤 没有大太阳的暴晒，", "出门感觉微风拂面，", "享受这份惬意吧 🎐"],
                 ["☁️ 虽然是阴天，", "但我的爱像太阳一样，", "永远温暖着你 ☀️"],
@@ -268,7 +250,6 @@ def get_segmented_weather_tips(weather_info):
     except Exception: 
         pass
         
-    # 按要求返回并注入 \n 用于撑开视图盒子，绝对不要更改这里的逻辑
     return (
         lines[0] + "\n" if len(lines) > 0 else "", 
         lines[1] + "\n" if len(lines) > 1 else "", 
@@ -317,14 +298,19 @@ def send_message():
     birthday_left = get_birthday_left()
     today = get_beijing_today()
     
-    # 判断今天是否为周五 (0是周一，4是周五)
+    # 解析当前的节日状态，获取文案和对应的节日名称
+    holiday_text, today_holiday_name = get_dynamic_holiday_str(today, birthday_left, love_days)
+    
+    # 动态匹配节日专属 Emoji（如果不是节日，则为空字符串）
+    holiday_emoji = HOLIDAY_EMOJI_MAP.get(today_holiday_name, "")
+    
     if today.weekday() == 4:
         greeting_text = random.choice(FRIDAY_GREETINGS)
     else:
         greeting_text = random.choice(DAILY_GREETINGS)
     
-    # 【核心防御】物理截断与折叠防御：切片长度严格控制在18，并注入\n
-    full_top = f"早安，我最爱的宝宝！{greeting_text}"
+    # 将节日专属 Emoji 融合进早安问候的头部！
+    full_top = f"{holiday_emoji}早安，我最爱的宝宝！{greeting_text}"
     top1 = full_top[:18]
     top2 = full_top[18:36]
     
@@ -335,7 +321,18 @@ def send_message():
     q3 = caihongpi[36:54]
     q4 = caihongpi[54:72]
 
-    # 【核心防御】模板组装时严禁破坏现有数据结构，保留末尾换行
+    # 动态计算气温颜色
+    try:
+        high_temp = float(weather["high"].replace("℃","").replace("°C","").strip())
+        if high_temp >= 30.0:
+            temp_color = "#FF0000"  # 红色 (酷热)
+        elif high_temp <= 15.0:
+            temp_color = "#1E90FF"  # 蓝色 (寒冷)
+        else:
+            temp_color = "#008000"  # 绿色 (舒适)
+    except:
+        temp_color = "#FF0000"      # 默认兜底红色
+
     data = {
         "touser": OPEN_ID, 
         "template_id": TEMPLATE_ID,
@@ -345,10 +342,10 @@ def send_message():
             "d": {"value": today.strftime("%Y年%m月%d日"), "color": "#173177"},
             "c": {"value": CITY_NAME, "color": "#173177"}, 
             "w": {"value": weather["weather"], "color": "#173177"},
-            "t": {"value": f"{weather['low']} ~ {weather['high']}\n", "color": "#FF0000"},
+            "t": {"value": f"{weather['low']} ~ {weather['high']}\n", "color": temp_color},
             "ld": {"value": str(love_days), "color": "#FF69B4"}, 
             "bl": {"value": str(birthday_left), "color": "#FF69B4"},
-            "h": {"value": f"{get_dynamic_holiday_str(today, birthday_left, love_days)}\n", "color": "#FF8C00"},
+            "h": {"value": f"{holiday_text}\n", "color": "#FF8C00"},
             "t1": {"value": tip1, "color": "#008000"}, 
             "t2": {"value": tip2, "color": "#008000"}, 
             "t3": {"value": f"{tip3}\n", "color": "#008000"},
@@ -364,7 +361,6 @@ def send_message():
     
     if res.get("errcode") == 0:
         print("✅ 推送成功！本次推送的具体文案数据如下：")
-        # 仅提取核心的数据载体(data)部分打印，缩进设为2个空格，确保中文正常显示
         print(json.dumps(data.get("data"), ensure_ascii=False, indent=2))
         return True
         
