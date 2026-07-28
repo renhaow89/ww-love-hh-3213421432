@@ -363,10 +363,14 @@ def send_message():
     res = requests.post(url, json=data, timeout=10).json()
     
     if res.get("errcode") == 0:
-        print("✅ 推送成功！")
+        print("✅ 推送成功！本次推送的具体文案数据如下：")
+        # 仅提取核心的数据载体(data)部分打印，缩进设为2个空格，确保中文正常显示
+        print(json.dumps(data.get("data"), ensure_ascii=False, indent=2))
         return True
         
-    print(f"❌ 推送失败: {res}")
+    print(f"❌ 推送失败，微信接口返回错误: {res}")
+    print("准备推送的数据为：")
+    print(json.dumps(data.get("data"), ensure_ascii=False, indent=2))
     return False
 
 if __name__ == "__main__":
