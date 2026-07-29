@@ -467,8 +467,21 @@ def send_message():
     res = requests.post(url, json=data, timeout=10).json()
     
     if res.get("errcode") == 0:
-        print("✅ 推送成功！本次推送的具体文案数据如下：")
-        print(json.dumps(data.get("data"), ensure_ascii=False, indent=2))
+        print("✅ 推送成功！这是一份给她的消息预览（所见即所得）：")
+        d = data["data"]
+        print("=" * 35)
+        print(f"🌈 {d['top1']['value'].strip()}{d['top2']['value'].strip()}")
+        print(f"📅 日期：{d['d']['value'].strip()}")
+        print(f"📍 城市：{d['c']['value'].strip()} | {d['w']['value'].strip()}")
+        print(f"🌡️ 气温：{d['t']['value'].strip()}")
+        print(f"💖 恋爱打卡：第 {d['ld']['value'].strip()} 天")
+        print(f"🎂 生日倒数：{d['bl']['value'].strip()} 天")
+        print(f"⭐ 状态：{d['h']['value'].strip()}")
+        print(f"🔔 专属提醒：")
+        print(f"👉 {d['t1']['value'].strip()}{d['t2']['value'].strip()}{d['t3']['value'].strip()}")
+        print(f"💌 今天更加爱你：")
+        print(f"💬 {d['q1']['value'].strip()}{d['q2']['value'].strip()}{d['q3']['value'].strip()}{d['q4']['value'].strip()}")
+        print("=" * 35)
         return True
         
     print(f"❌ 推送失败，微信接口返回错误: {res}")
