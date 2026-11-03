@@ -3,7 +3,7 @@ name: 每日早安推送
 on:
   schedule:
     # 避开
-    - cron: '39 22 * * *'
+    - cron: '37 22 * * *'
   workflow_dispatch:  # 允许手动点击测试
 
 jobs:
