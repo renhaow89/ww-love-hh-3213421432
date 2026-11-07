@@ -2,8 +2,11 @@
 import requests
 import os
 import random
-import json
-from datetime import datetime, timedelta, date
+import argparse
+import math
+import sys
+import time
+from datetime import datetime, timedelta, date, timezone
 from zhdate import ZhDate
 
 # ==================== 配置区 ====================
@@ -110,18 +113,26 @@ HOLIDAY_END_GREETINGS = [
 
 # ==================== 时间引擎 ====================
 def get_beijing_today():
-    return (datetime.utcnow() + timedelta(hours=8)).date()
+    return (datetime.now(timezone.utc) + timedelta(hours=8)).date()
 
-def get_love_days():
-    return (get_beijing_today() - LOVE_DATE).days
+def get_love_days(today=None):
+    today = today if today is not None else get_beijing_today()
+    return (today - LOVE_DATE).days
 
 def _get_safe_lunar_date(year, l_month, l_day):
-    for day_offset in range(l_day, l_day - 3, -1):
-        try:
-            return ZhDate(year, l_month, day_offset).to_datetime().date()
-        except Exception:
-            continue
-    return date(year, 1, 1)
+    if not (1900 <= year <= 2100 and 1 <= l_month <= 12 and 1 <= l_day <= 30):
+        raise ValueError("农历日期超出支持范围")
+    # 小月没有三十时按廿九提醒，其他无效日期直接报错。
+    days = (30, 29) if l_day == 30 else (l_day,)
+    for day in days:
+        if ZhDate.validate(year, l_month, day, False):
+            return ZhDate(year, l_month, day).to_datetime().date()
+    raise ValueError("农历日期无效")
+
+
+def _get_lunar_year(today):
+    return ZhDate.from_datetime(datetime.combine(today, datetime.min.time())).lunar_year
+
 
 def _get_safe_solar_date(year, month, day):
     try:
@@ -129,12 +140,11 @@ def _get_safe_solar_date(year, month, day):
     except ValueError:
         return date(year, month, day - 1)
 
-def get_birthday_left():
-    today = get_beijing_today()
-    bday = _get_safe_lunar_date(today.year, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2])
-    if bday < today:
-        bday = _get_safe_lunar_date(today.year + 1, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2])
+def get_birthday_left(today=None):
+    today = today if today is not None else get_beijing_today()
+    bday = get_next_lunar_date(today, BIRTHDAY_LUNAR[1], BIRTHDAY_LUNAR[2])
     return (bday - today).days
+
 
 def get_qingming_date(year):
     y = year % 100
@@ -142,16 +152,18 @@ def get_qingming_date(year):
     return date(year, 4, day)
 
 def get_next_lunar_date(today, lunar_month, lunar_day):
-    t_date = _get_safe_lunar_date(today.year, lunar_month, lunar_day)
-    if t_date < today:
-        t_date = _get_safe_lunar_date(today.year + 1, lunar_month, lunar_day)
-    return t_date
+    # 春节前仍属于上一农历年，不能直接套用公历年份。
+    lunar_year = _get_lunar_year(today)
+    for year in (lunar_year, lunar_year + 1):
+        candidate = _get_safe_lunar_date(year, lunar_month, lunar_day)
+        if candidate >= today:
+            return candidate
+    raise ValueError("无法计算下一次农历日期")
+
 
 def get_next_chuxi(today):
-    sf_this_year = ZhDate(today.year, 1, 1).to_datetime().date()
-    chuxi = sf_this_year - timedelta(days=1)
-    if chuxi >= today: return chuxi
-    return ZhDate(today.year + 1, 1, 1).to_datetime().date() - timedelta(days=1)
+    return get_next_lunar_date(today + timedelta(days=1), 1, 1) - timedelta(days=1)
+
 
 def get_dynamic_holiday_str(today, birthday_left, love_days):
     # 🌟 方案一：隐藏彩蛋最高优先级拦截
@@ -220,111 +232,121 @@ def get_segmented_weather_tips(weather_info):
     ]
     lines = random.choice(default_tips)
     
-    try:
-        cl = float(low_str.replace("℃","").replace("°C","").strip())
-        ch = float(high_str.replace("℃","").replace("°C","").strip())
-        
-        if ch >= 35.0: 
-            # 酷热天气语录（10条随机）
-            lines = random.choice([
-                ["今天杭州比较热，", "记得多喝点水，", "空调也不要吹太久哦 ❤️"],
-                ["外面太阳超级大！", "出门千万要防晒，", "尽量待在室内哦 🍦"],
-                ["高温预警来啦，", "冰镇西瓜准备好，", "别让自己热坏了 🍉"],
-                ["这天气像个大烤箱，", "宝宝出门带好遮阳伞，", "防晒霜也要涂好哦 ⛱️"],
-                ["气温实在是太高啦，", "适合喝杯冰镇奶茶，", "给自己降降温吧 🥤"],
-                ["热浪滚滚的一天，", "尽量避免户外走动，", "在空调房里舒服待着 🧊"],
-                ["室外简直像蒸笼，", "出门记得带小风扇，", "千万千万别中暑啦 🌀"],
-                ["高温天容易烦躁，", "送你一阵虚拟清风，", "希望你能保持好心情 🌬️"],
-                ["太阳公公今天太热情，", "我们要躲着它走，", "做好物理防晒哦 🕶️"],
-                ["今天绝对是暴晒，", "如果可以的话，", "真想把你藏进冰箱里 🐧"]
-            ])
-        elif ch >= 30.0: 
-            # 偏热天气语录（10条随机）
-            lines = random.choice([
-                ["今天气温有点偏高，", "出门注意做好防晒，", "多喝水谨防中暑 ❤️"],
-                ["微热的天气，", "适合喝点冰镇饮料，", "享受夏日的小美好 🥤"],
-                ["有一点点热哦，", "尽量穿透气轻薄的衣服，", "出门记得带上遮阳伞 ⛱️"],
-                ["气温三十度以上啦，", "多吃点水果补充水分，", "照顾好自己哟 🍎"],
-                ["今天略显闷热，", "心情不要跟着烦闷，", "想点开心的事情吧 🌈"],
-                ["气温逐渐爬升，", "防晒工作不能停，", "做这条街最白的崽 🌟"],
-                ["又是有点热的一天，", "午休记得稍微眯一会，", "下午才能元气满满 💤"],
-                ["温度不低哦，", "外出如果出汗了，", "记得及时擦干防感冒 💦"],
-                ["今天适合穿小裙子，", "搭配你喜欢的凉鞋，", "美美地度过这一天 👗"],
-                ["阳光有些耀眼，", "记得戴上墨镜出门，", "清清凉凉度过今天 🧊"]
-            ])
-        elif cl <= 10.0: 
-            # 降温/寒冷天气语录（10条随机）
-            lines = random.choice([
-                ["今天有点降温啦，", "记得多穿两件厚衣服，", "千万别感冒了 ❤️"],
-                ["外面风吹着有点冷，", "出门记得带件外套，", "把自己裹得暖暖的 🧣"],
-                ["气温好低呀，", "想给你一个大大的拥抱，", "把温暖都传递给你 🤗"],
-                ["今天冷飕飕的，", "记得喝点热茶热牛奶，", "暖心又暖胃 ☕"],
-                ["降温了宝宝，", "秋裤棉袜可以安排上了，", "保暖才是第一位 🧦"],
-                ["冷空气来袭！", "出门最好戴上帽子口罩，", "别让冷风吹到头 🧤"],
-                ["这种冻人的天气，", "真想立刻下班，", "和你一起吃顿热火锅 🍲"],
-                ["被窝之外都是远方，", "既然要出门打工，", "就给自己贴个暖宝宝吧 🔥"],
-                ["气温降到个位数啦，", "大衣羽绒服快拿出来，", "把自己包成小粽子 🧥"],
-                ["天气好冷，", "如果我的手在就好了，", "可以帮你暖暖冰凉的手 🤲"]
-            ])
-        elif "雨" in weather_str: 
-            # 下雨天气语录（10条随机）
-            lines = random.choice([
-                ["杭州今天有雨，", "出门记得带伞哦～", "希望一路顺顺利利 ❤️"],
-                ["阴雨绵绵的日子，", "适合泡一杯热奶茶，", "享受片刻的宁静 ☕"],
-                ["外面下雨啦，", "路面湿滑小心慢走，", "别弄脏了漂亮的鞋子 ☔"],
-                ["雨天容易降温，", "带伞的同时也带件薄外套，", "照顾好自己哦 🌧️"],
-                ["听着雨声工作，", "也许能让心静下来，", "雨过天晴我来接你 🌈"],
-                ["雨滴在窗外跳舞，", "我的心在为你打伞，", "雨天也要拥有好心情 🌂"],
-                ["虽然天阴沉沉的，", "但有我在你身边，", "每天都是阳光灿烂 ☀️"],
-                ["出门前检查下包包，", "雨伞带了吗？", "可别淋成小落汤鸡啦 🐥"],
-                ["讨厌的下雨天，", "最容易让人犯困，", "喝杯咖啡提提神吧 ☕"],
-                ["下雨了，出门注意安全，", "如果没带伞千万别淋雨，", "等我或者等雨停 🚗"]
-            ])
-        elif "雪" in weather_str: 
-            # 下雪天气语录（10条随机）
-            lines = random.choice([
-                ["今天下雪啦，", "路面可能会打滑，", "走路要注意安全哦 ❤️"],
-                ["哇，外面飘雪了，", "记得戴上手套帽子，", "别冻坏了小手 🧤"],
-                ["初雪的日子里，", "最想和你一起散步，", "一不小心就白了头 ❄️"],
-                ["下雪虽然好看，", "但真的超级无敌冷，", "宝宝必须穿最厚的衣服 🧣"],
-                ["白色的世界好美，", "有机会我们一起，", "去堆个大大的雪人吧 ⛄"],
-                ["雪天地滑，", "出门尽量穿防滑的鞋，", "走路要慢一点哦 🐧"],
-                ["好大的雪呀！", "记得给自己贴几个暖宝宝，", "不要感冒啦 🔥"],
-                ["下雪天最适合，", "窝在家里吃烤红薯，", "等下班了我买给你吃 🍠"],
-                ["飞舞的雪花，", "就像我对你的思念，", "密密麻麻数不清 🌨️"],
-                ["这么冷的天，", "只要一想到你，", "心里就觉得暖暖的 🥰"]
-            ])
-        elif "晴" in weather_str: 
-            # 晴天语录（10条随机）
-            lines = random.choice([
-                ["☀ 今天天气很好，", "希望你今天也能，", "拥有一个好心情 ❤️"],
-                ["☀ 阳光刚刚好，", "微风不燥，", "很适合出门拥抱自然 🍃"],
-                ["☀ 是个大晴天呢，", "记得抬起头看看蓝天，", "把烦恼都丢掉 ⛅"],
-                ["☀ 阳光明媚，", "连空气里都是甜甜的味道，", "和你一样可爱 🍬"],
-                ["☀ 又是晴朗的一天，", "把被子拿出去晒晒，", "晚上睡觉会有太阳的香气 🛌"],
-                ["☀ 太阳公公出来了，", "记得给自己涂点防晒，", "然后闪亮登场吧 ✨"],
-                ["☀ 完美的天气，", "配上完美的你，", "今天必定是完美的一天 💯"],
-                ["☀ 阳光普照，", "万物都在努力生长，", "我们也要一起加油呀 🌱"],
-                ["☀ 沐浴在晨光中，", "愿你今天的每一个决定，", "都无比正确且顺利 🏆"],
-                ["☀ 喜欢这样明媚的天，", "更喜欢这样明媚的你，", "早安我的宝贝 💖"]
-            ])
-        elif "阴" in weather_str or "多云" in weather_str: 
-            # 阴天/多云语录（10条随机）
-            lines = random.choice([
-                ["🌤 今天虽然有点阴，", "但希望你的心情，", "一直都是晴天 ❤️"],
-                ["☁️ 云朵挡住了太阳，", "天气感觉挺凉爽的，", "是个舒服的好日子 🍃"],
-                ["🌤 多云的天气最舒服啦，", "不冷也不热，", "连呼吸都很顺畅 🎈"],
-                ["☁️ 阳光偶尔透出云层，", "就像生活里的小确幸，", "今天也要加油哦 💪"],
-                ["🌤 阴天比较温和，", "不会被太阳刺痛眼睛，", "适合安安静静地工作 💻"],
-                ["☁️ 看不到太阳也没关系，", "因为你就是我生命里，", "最闪亮的小太阳 ☀️"],
-                ["🌤 漫天的小云朵，", "像棉花糖一样柔软，", "好像咬一口试试 ☁️"],
-                ["☁️ 气温刚刚好，", "这种温温柔柔的天气，", "最适合想你了 🥰"],
-                ["🌤 别被灰蒙蒙的天影响，", "给自己买杯好喝的，", "点亮今天的心情 🍹"],
-                ["☁️ 多云转晴，", "愿你的所有坏情绪，", "也能像云一样飘走 🌬️"]
-            ])
-    except Exception: 
-        pass
-        
+    if weather_info.get("available") is False:
+        return "天气暂时查不到，\n", "出门前看看天气预报，\n", "记得照顾好自己 ❤️"
+
+    cl = _optional_temperature(low_str)
+    ch = _optional_temperature(high_str)
+    if "雪" in weather_str:
+        # 下雪天气语录（10条随机）
+        lines = random.choice([
+            ["今天下雪啦，", "路面可能会打滑，", "走路要注意安全哦 ❤️"],
+            ["哇，外面飘雪了，", "记得戴上手套帽子，", "别冻坏了小手 🧤"],
+            ["初雪的日子里，", "最想和你一起散步，", "一不小心就白了头 ❄️"],
+            ["下雪虽然好看，", "但真的超级无敌冷，", "宝宝必须穿最厚的衣服 🧣"],
+            ["白色的世界好美，", "有机会我们一起，", "去堆个大大的雪人吧 ⛄"],
+            ["雪天地滑，", "出门尽量穿防滑的鞋，", "走路要慢一点哦 🐧"],
+            ["好大的雪呀！", "记得给自己贴几个暖宝宝，", "不要感冒啦 🔥"],
+            ["下雪天最适合，", "窝在家里吃烤红薯，", "等下班了我买给你吃 🍠"],
+            ["飞舞的雪花，", "就像我对你的思念，", "密密麻麻数不清 🌨️"],
+            ["这么冷的天，", "只要一想到你，", "心里就觉得暖暖的 🥰"]
+        ])
+    elif "雨" in weather_str:
+        # 下雨天气语录（10条随机）
+        lines = random.choice([
+            ["杭州今天有雨，", "出门记得带伞哦～", "希望一路顺顺利利 ❤️"],
+            ["阴雨绵绵的日子，", "适合泡一杯热奶茶，", "享受片刻的宁静 ☕"],
+            ["外面下雨啦，", "路面湿滑小心慢走，", "别弄脏了漂亮的鞋子 ☔"],
+            ["雨天容易降温，", "带伞的同时也带件薄外套，", "照顾好自己哦 🌧️"],
+            ["听着雨声工作，", "也许能让心静下来，", "雨过天晴我来接你 🌈"],
+            ["雨滴在窗外跳舞，", "我的心在为你打伞，", "雨天也要拥有好心情 🌂"],
+            ["虽然天阴沉沉的，", "但有我在你身边，", "每天都是阳光灿烂 ☀️"],
+            ["出门前检查下包包，", "雨伞带了吗？", "可别淋成小落汤鸡啦 🐥"],
+            ["讨厌的下雨天，", "最容易让人犯困，", "喝杯咖啡提提神吧 ☕"],
+            ["下雨了，出门注意安全，", "如果没带伞千万别淋雨，", "等我或者等雨停 🚗"]
+        ])
+    elif ch is not None and ch >= 35.0:
+        # 酷热天气语录（10条随机）
+        lines = random.choice([
+            ["今天杭州比较热，", "记得多喝点水，", "空调也不要吹太久哦 ❤️"],
+            ["外面太阳超级大！", "出门千万要防晒，", "尽量待在室内哦 🍦"],
+            ["高温预警来啦，", "冰镇西瓜准备好，", "别让自己热坏了 🍉"],
+            ["这天气像个大烤箱，", "宝宝出门带好遮阳伞，", "防晒霜也要涂好哦 ⛱️"],
+            ["气温实在是太高啦，", "适合喝杯冰镇奶茶，", "给自己降降温吧 🥤"],
+            ["热浪滚滚的一天，", "尽量避免户外走动，", "在空调房里舒服待着 🧊"],
+            ["室外简直像蒸笼，", "出门记得带小风扇，", "千万千万别中暑啦 🌀"],
+            ["高温天容易烦躁，", "送你一阵虚拟清风，", "希望你能保持好心情 🌬️"],
+            ["太阳公公今天太热情，", "我们要躲着它走，", "做好物理防晒哦 🕶️"],
+            ["今天绝对是暴晒，", "如果可以的话，", "真想把你藏进冰箱里 🐧"]
+        ])
+    elif ch is not None and ch >= 30.0:
+        # 偏热天气语录（10条随机）
+        lines = random.choice([
+            ["今天气温有点偏高，", "出门注意做好防晒，", "多喝水谨防中暑 ❤️"],
+            ["微热的天气，", "适合喝点冰镇饮料，", "享受夏日的小美好 🥤"],
+            ["有一点点热哦，", "尽量穿透气轻薄的衣服，", "出门记得带上遮阳伞 ⛱️"],
+            ["气温三十度以上啦，", "多吃点水果补充水分，", "照顾好自己哟 🍎"],
+            ["今天略显闷热，", "心情不要跟着烦闷，", "想点开心的事情吧 🌈"],
+            ["气温逐渐爬升，", "防晒工作不能停，", "做这条街最白的崽 🌟"],
+            ["又是有点热的一天，", "午休记得稍微眯一会，", "下午才能元气满满 💤"],
+            ["温度不低哦，", "外出如果出汗了，", "记得及时擦干防感冒 💦"],
+            ["今天适合穿小裙子，", "搭配你喜欢的凉鞋，", "美美地度过这一天 👗"],
+            ["阳光有些耀眼，", "记得戴上墨镜出门，", "清清凉凉度过今天 🧊"]
+        ])
+    elif cl is not None and cl <= 10.0:
+        # 降温/寒冷天气语录（10条随机）
+        lines = random.choice([
+            ["今天有点降温啦，", "记得多穿两件厚衣服，", "千万别感冒了 ❤️"],
+            ["外面风吹着有点冷，", "出门记得带件外套，", "把自己裹得暖暖的 🧣"],
+            ["气温好低呀，", "想给你一个大大的拥抱，", "把温暖都传递给你 🤗"],
+            ["今天冷飕飕的，", "记得喝点热茶热牛奶，", "暖心又暖胃 ☕"],
+            ["降温了宝宝，", "秋裤棉袜可以安排上了，", "保暖才是第一位 🧦"],
+            ["冷空气来袭！", "出门最好戴上帽子口罩，", "别让冷风吹到头 🧤"],
+            ["这种冻人的天气，", "真想立刻下班，", "和你一起吃顿热火锅 🍲"],
+            ["被窝之外都是远方，", "既然要出门打工，", "就给自己贴个暖宝宝吧 🔥"],
+            ["气温降到个位数啦，", "大衣羽绒服快拿出来，", "把自己包成小粽子 🧥"],
+            ["天气好冷，", "如果我的手在就好了，", "可以帮你暖暖冰凉的手 🤲"]
+        ])
+    elif "晴" in weather_str:
+        # 晴天语录（10条随机）
+        lines = random.choice([
+            ["☀ 今天天气很好，", "希望你今天也能，", "拥有一个好心情 ❤️"],
+            ["☀ 阳光刚刚好，", "微风不燥，", "很适合出门拥抱自然 🍃"],
+            ["☀ 是个大晴天呢，", "记得抬起头看看蓝天，", "把烦恼都丢掉 ⛅"],
+            ["☀ 阳光明媚，", "连空气里都是甜甜的味道，", "和你一样可爱 🍬"],
+            ["☀ 又是晴朗的一天，", "把被子拿出去晒晒，", "晚上睡觉会有太阳的香气 🛌"],
+            ["☀ 太阳公公出来了，", "记得给自己涂点防晒，", "然后闪亮登场吧 ✨"],
+            ["☀ 完美的天气，", "配上完美的你，", "今天必定是完美的一天 💯"],
+            ["☀ 阳光普照，", "万物都在努力生长，", "我们也要一起加油呀 🌱"],
+            ["☀ 沐浴在晨光中，", "愿你今天的每一个决定，", "都无比正确且顺利 🏆"],
+            ["☀ 喜欢这样明媚的天，", "更喜欢这样明媚的你，", "早安我的宝贝 💖"]
+        ])
+    elif "阴" in weather_str or "多云" in weather_str:
+        # 阴天/多云语录（10条随机）
+        lines = random.choice([
+            ["🌤 今天虽然有点阴，", "但希望你的心情，", "一直都是晴天 ❤️"],
+            ["☁️ 云朵挡住了太阳，", "天气感觉挺凉爽的，", "是个舒服的好日子 🍃"],
+            ["🌤 多云的天气最舒服啦，", "不冷也不热，", "连呼吸都很顺畅 🎈"],
+            ["☁️ 阳光偶尔透出云层，", "就像生活里的小确幸，", "今天也要加油哦 💪"],
+            ["🌤 阴天比较温和，", "不会被太阳刺痛眼睛，", "适合安安静静地工作 💻"],
+            ["☁️ 看不到太阳也没关系，", "因为你就是我生命里，", "最闪亮的小太阳 ☀️"],
+            ["🌤 漫天的小云朵，", "像棉花糖一样柔软，", "好像咬一口试试 ☁️"],
+            ["☁️ 气温刚刚好，", "这种温温柔柔的天气，", "最适合想你了 🥰"],
+            ["🌤 别被灰蒙蒙的天影响，", "给自己买杯好喝的，", "点亮今天的心情 🍹"],
+            ["☁️ 多云转晴，", "愿你的所有坏情绪，", "也能像云一样飘走 🌬️"]
+        ])
+
+    if "雪" in weather_str:
+        lines = [*lines[:2], "保暖防滑，慢慢走哦 ❤️"]
+    elif "雨" in weather_str:
+        if cl is not None and cl <= 10:
+            reminder = "带伞添衣，小心路滑 ❤️"
+        elif ch is not None and ch >= 30:
+            reminder = "带伞防晒，记得喝水 ❤️"
+        else:
+            reminder = "出门带伞，小心路滑 ❤️"
+        lines = [*lines[:2], reminder]
+
     return (
         lines[0] + "\n" if len(lines) > 0 else "", 
         lines[1] + "\n" if len(lines) > 1 else "", 
@@ -332,46 +354,108 @@ def get_segmented_weather_tips(weather_info):
     )
 
 # ==================== API 请求 ====================
+class APIError(RuntimeError):
+    pass
+
+
+def _optional_temperature(value):
+    try:
+        temperature = float(str(value).replace("℃", "").replace("°C", "").strip())
+        return temperature if math.isfinite(temperature) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _api_error_code(payload, key="errcode"):
+    code = payload.get(key)
+    return code if type(code) is int else "未知"
+
+
+def _get_json(url, params, label):
+    # 只重试读取请求；发送接口不自动重试，避免超时后重复投递。
+    for attempt in range(3):
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("接口响应格式异常")
+            return payload
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status is not None and status != 429 and status < 500:
+                break
+        except (requests.RequestException, ValueError):
+            pass
+        if attempt < 2:
+            print(f"⚠️ {label}读取失败，准备第 {attempt + 2} 次尝试")
+            time.sleep(attempt + 1)
+    # 原始异常可能包含密钥或 Token URL，日志只保留接口名称。
+    raise APIError(f"{label}请求失败，请检查网络或接口服务") from None
+
+
 def get_access_token():
-    url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={APP_ID}&secret={APP_SECRET}"
-    return requests.get(url, timeout=10).json().get("access_token")
+    payload = _get_json(
+        "https://api.weixin.qq.com/cgi-bin/token",
+        {"grant_type": "client_credential", "appid": APP_ID, "secret": APP_SECRET},
+        "微信 Access Token 接口",
+    )
+    token = payload.get("access_token")
+    if not isinstance(token, str) or not token.strip():
+        raise APIError(f"获取 Access Token 失败，微信错误码：{_api_error_code(payload)}")
+    return token
+
 
 def get_weather():
+    unavailable = {"weather": "暂不可用", "low": "", "high": "", "available": False}
+    if not TIANAPI_KEY:
+        print("⚠️ 未配置 TIANAPI_KEY，天气显示暂不可用")
+        return unavailable
     try:
-        url = f"https://apis.tianapi.com/tianqi/index?key={TIANAPI_KEY}&city={CITY_NAME}&type=1"
-        res = requests.get(url, timeout=10).json()
-        if res.get("code") == 200: 
-            return {
-                "weather": res["result"]["weather"], 
-                "low": res["result"]["lowest"], 
-                "high": res["result"]["highest"]
-            }
-    except: 
-        pass
-    return {"weather": "多云", "low": "20℃", "high": "25℃"}
+        payload = _get_json(
+            "https://apis.tianapi.com/tianqi/index",
+            {"key": TIANAPI_KEY, "city": CITY_NAME, "type": 1},
+            "天气接口",
+        )
+        if payload.get("code") != 200:
+            print(f"⚠️ 天气接口错误码：{_api_error_code(payload, 'code')}")
+            return unavailable
+        result = payload["result"]
+        weather, low, high = result["weather"], result["lowest"], result["highest"]
+        low_temp, high_temp = _optional_temperature(low), _optional_temperature(high)
+        if not isinstance(weather, str) or not weather.strip():
+            raise ValueError("天气描述缺失")
+        if low_temp is None or high_temp is None or low_temp > high_temp:
+            raise ValueError("天气温度无效")
+        return {"weather": weather, "low": str(low), "high": str(high), "available": True}
+    except (APIError, KeyError, TypeError, ValueError):
+        print("⚠️ 天气暂不可用，本次不生成具体气温建议")
+        return unavailable
+
 
 def get_caihongpi():
-    try:
-        url = f"https://apis.tianapi.com/caihongpi/index?key={TIANAPI_KEY}"
-        res = requests.get(url, timeout=10).json()
-        if res.get("code") == 200: 
-            return res["result"]["content"].replace("XXX", "小胡胡")
-    except: 
-        pass
+    if TIANAPI_KEY:
+        try:
+            payload = _get_json(
+                "https://apis.tianapi.com/caihongpi/index", {"key": TIANAPI_KEY}, "彩虹屁接口"
+            )
+            if payload.get("code") == 200:
+                content = payload["result"]["content"]
+                if isinstance(content, str) and content.strip():
+                    return content.replace("XXX", "小胡胡")
+            print("⚠️ 彩虹屁接口暂不可用，使用本地文案")
+        except (APIError, KeyError, TypeError, ValueError):
+            print("⚠️ 彩虹屁接口暂不可用，使用本地文案")
     return "今天也超级喜欢你！"
 
-# ==================== 主发信管道 ====================
-def send_message():
-    access_token = get_access_token()
-    if not access_token: 
-        print("❌ 获取 Access Token 失败")
-        return False
 
+# ==================== 主发信管道 ====================
+def build_message():
+    today = get_beijing_today()
     weather = get_weather()
     caihongpi = get_caihongpi()
-    love_days = get_love_days()
-    birthday_left = get_birthday_left()
-    today = get_beijing_today()
+    love_days = get_love_days(today)
+    birthday_left = get_birthday_left(today)
     
     # 动态匹配节日文案与名称
     holiday_text, today_holiday_name = get_dynamic_holiday_str(today, birthday_left, love_days)
@@ -393,9 +477,9 @@ def send_message():
         is_holiday_end = True
         
     # 2. 农历长假判断 (春节 正月初四、初七)
-    if today == _get_safe_lunar_date(today.year, 1, 4):
+    if today == _get_safe_lunar_date(_get_lunar_year(today), 1, 4):
         is_holiday_half = True
-    elif today == _get_safe_lunar_date(today.year, 1, 7):
+    elif today == _get_safe_lunar_date(_get_lunar_year(today), 1, 7):
         is_holiday_end = True
 
     # 📅 组合状态：全自动“假期拦截”与“星期情绪”判断
@@ -430,16 +514,21 @@ def send_message():
 
     # 动态计算气温颜色
     try:
-        high_temp = float(weather["high"].replace("℃","").replace("°C","").strip())
+        high_temp = _optional_temperature(weather["high"])
+        if high_temp is None:
+            raise ValueError("天气温度不可用")
         if high_temp >= 30.0:
             temp_color = "#FF0000"  # 红色
         elif high_temp <= 15.0:
             temp_color = "#1E90FF"  # 蓝色
         else:
             temp_color = "#008000"  # 绿色
-    except:
-        temp_color = "#FF0000"
+    except (KeyError, TypeError, ValueError):
+        temp_color = "#173177"
 
+    temperature_text = (
+        f"{weather['low']} ~ {weather['high']}" if weather.get("available", True) else "暂不可用"
+    )
     data = {
         "touser": OPEN_ID, 
         "template_id": TEMPLATE_ID,
@@ -449,7 +538,7 @@ def send_message():
             "d": {"value": today.strftime("%Y年%m月%d日"), "color": "#173177"},
             "c": {"value": CITY_NAME, "color": "#173177"}, 
             "w": {"value": weather["weather"], "color": "#173177"},
-            "t": {"value": f"{weather['low']} ~ {weather['high']}\n", "color": temp_color},
+            "t": {"value": f"{temperature_text}\n", "color": temp_color},
             "ld": {"value": str(love_days), "color": "#FF69B4"}, 
             "bl": {"value": str(birthday_left), "color": "#FF69B4"},
             "h": {"value": f"{holiday_text}\n", "color": "#FF8C00"},
@@ -463,31 +552,77 @@ def send_message():
         }
     }
     
-    url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
-    res = requests.post(url, json=data, timeout=10).json()
-    
-    if res.get("errcode") == 0:
-        print("✅ 推送成功！这是一份给她的消息预览（所见即所得）：")
-        d = data["data"]
-        print("=" * 35)
-        print(f"🌈 {d['top1']['value'].strip()}{d['top2']['value'].strip()}")
-        print(f"📅 日期：{d['d']['value'].strip()}")
-        print(f"📍 城市：{d['c']['value'].strip()} | {d['w']['value'].strip()}")
-        print(f"🌡️ 气温：{d['t']['value'].strip()}")
-        print(f"💖 恋爱打卡：第 {d['ld']['value'].strip()} 天")
-        print(f"🎂 生日倒数：{d['bl']['value'].strip()} 天")
-        print(f"⭐ 状态：{d['h']['value'].strip()}")
-        print(f"🔔 专属提醒：")
-        print(f"👉 {d['t1']['value'].strip()}{d['t2']['value'].strip()}{d['t3']['value'].strip()}")
-        print(f"💌 今天更加爱你：")
-        print(f"💬 {d['q1']['value'].strip()}{d['q2']['value'].strip()}{d['q3']['value'].strip()}{d['q4']['value'].strip()}")
-        print("=" * 35)
-        return True
-        
-    print(f"❌ 推送失败，微信接口返回错误: {res}")
-    print("准备推送的数据为：")
-    print(json.dumps(data.get("data"), ensure_ascii=False, indent=2))
-    return False
+    return data
+
+
+def print_preview(data):
+    d = data["data"]
+    print("=" * 35)
+    print(f"🌈 {d['top1']['value'].strip()}{d['top2']['value'].strip()}")
+    print(f"📅 日期：{d['d']['value'].strip()}")
+    print(f"📍 城市：{d['c']['value'].strip()} | {d['w']['value'].strip()}")
+    print(f"🌡️ 气温：{d['t']['value'].strip()}")
+    print(f"💖 恋爱打卡：第 {d['ld']['value'].strip()} 天")
+    print(f"🎂 生日倒数：{d['bl']['value'].strip()} 天")
+    print(f"⭐ 状态：{d['h']['value'].strip()}")
+    print(f"🔔 专属提醒：")
+    print(f"👉 {d['t1']['value'].strip()}{d['t2']['value'].strip()}{d['t3']['value'].strip()}")
+    print(f"💌 今天更加爱你：")
+    print(f"💬 {d['q1']['value'].strip()}{d['q2']['value'].strip()}{d['q3']['value'].strip()}{d['q4']['value'].strip()}")
+    print("=" * 35)
+
+
+def send_message():
+    try:
+        access_token = get_access_token()
+    except APIError as exc:
+        print(f"❌ {exc}")
+        return False
+
+    data = build_message()
+    try:
+        response = requests.post(
+            "https://api.weixin.qq.com/cgi-bin/message/template/send",
+            params={"access_token": access_token}, json=data, timeout=10,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, dict):
+            raise ValueError("接口响应格式异常")
+    except (requests.RequestException, ValueError):
+        print("❌ 发送结果未确认，请先检查微信是否收到，避免重复推送")
+        return False
+
+    if _api_error_code(result) != 0:
+        print(f"❌ 推送失败，微信错误码：{_api_error_code(result)}")
+        return False
+    print("✅ 微信接口已接受推送，消息内容预览：")
+    print_preview(data)
+    return True
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="微信每日早安推送")
+    parser.add_argument("--dry-run", action="store_true", help="仅预览，不获取微信 Token、不发送消息")
+    args = parser.parse_args(argv)
+    try:
+        if args.dry_run:
+            print("📝 预览模式：")
+            print_preview(build_message())
+            return 0
+        required = ("APP_ID", "APP_SECRET", "OPEN_ID", "TEMPLATE_ID")
+        missing = [
+            name for name in required
+            if not globals()[name] or not globals()[name].strip()
+        ]
+        if missing:
+            print(f"❌ 缺少必要配置：{', '.join(missing)}")
+            return 1
+        return 0 if send_message() else 1
+    except (APIError, ValueError):
+        print("❌ 无法生成消息，请检查日期配置及接口返回格式")
+        return 1
+
 
 if __name__ == "__main__":
-    send_message()
+    sys.exit(main())
