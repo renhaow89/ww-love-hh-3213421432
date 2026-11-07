@@ -1,5 +1,13 @@
 # 回退与恢复
 
+## 关闭 AI，保留每日 QQ
+
+最快的方法是在仓库 **Settings → Secrets and variables → Actions → Variables** 将 `AI_ENABLED` 设为 `false`。下一次推送恢复原来的三段文案，不需要删除 DeepSeek 密钥，也不改变 QQ 接收人和定时。
+
+需要恢复完整代码时，只撤销本次 DeepSeek AI PR 的合并提交，恢复到 [backup/before-deepseek-ai-20261107](https://github.com/renhaow89/ww-love-hh-3213421432/tree/backup/before-deepseek-ai-20261107) 的 QQ 稳定版 `1642c26e1244dc7888722494f25b31905108a40c`。不要误撤销更早的 QQ 渠道 PR #2，否则会恢复成微信。
+
+AI 分支未合并时无需回退正式版。去重缓存只有日期和哈希，不含文案正文；保留或自然过期均不影响关闭 AI。已经发生的 API 调用和已发送消息不会因代码回退而撤销。
+
 ## 恢复每日微信发送
 
 QQ 升级基于微信稳定版 `6f9a33b6617147198be4902d0d6a19073efbb068`，已保存到 [backup/before-qq-trial-20261107](https://github.com/renhaow89/ww-love-hh-3213421432/tree/backup/before-qq-trial-20261107)。该版本包含已经实际发送成功的微信修复，Python 为 3.12。

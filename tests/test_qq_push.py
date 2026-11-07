@@ -76,7 +76,7 @@ class QQTests(TestCase):
         self.post.side_effect = AssertionError("测试禁止真实 POST")
         self.enterContext(patch.object(qq.time, "sleep"))
         self.output = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
-        self.enterContext(patch.dict(os.environ, {"QQ_APP_ID": "123456789", "QQ_APP_SECRET": SECRET, "QQ_USER_OPENID": ""}))
+        self.enterContext(patch.dict(os.environ, {"QQ_APP_ID": "123456789", "QQ_APP_SECRET": SECRET, "QQ_USER_OPENID": "", "DEEPSEEK_API_KEY": ""}))
         self.client = qq.QQClient("123456789", SECRET)
         self.client.token = TOKEN
 
@@ -265,7 +265,8 @@ class QQTests(TestCase):
         self.post.assert_not_called()
 
     def test_trial_with_recipient_uses_active_send_only(self):
-        with patch.dict(os.environ, {"QQ_USER_OPENID": RECIPIENT}), patch.object(qq, "morning_text", return_value="早安试收"), patch.object(qq.QQClient, "send_text", return_value="sent") as send, patch.object(qq, "bind_receiver") as bind, patch.object(qq.wechat_love, "send_message") as wechat:
+        message = qq.MorningMessage("早安试收", qq.ai_greetings.GeneratedCopy())
+        with patch.dict(os.environ, {"QQ_USER_OPENID": RECIPIENT}), patch.object(qq, "compose_morning_message", return_value=message), patch.object(qq.QQClient, "send_text", return_value="sent") as send, patch.object(qq, "bind_receiver") as bind, patch.object(qq.wechat_love, "send_message") as wechat:
             self.assertEqual(qq.main([]), 0)
         send.assert_called_once_with(RECIPIENT, "早安试收")
         bind.assert_not_called()
@@ -278,7 +279,7 @@ class QQTests(TestCase):
         send.assert_not_called()
 
     def test_daily_mode_without_recipient_does_not_start_binding(self):
-        with patch.object(qq, "bind_receiver") as bind, patch.object(qq, "morning_text") as text, patch.object(qq.QQClient, "send_text") as send:
+        with patch.object(qq, "bind_receiver") as bind, patch.object(qq, "compose_morning_message") as text, patch.object(qq.QQClient, "send_text") as send:
             self.assertEqual(qq.main(["--mode", "test"]), 1)
         bind.assert_not_called()
         text.assert_not_called()
@@ -292,7 +293,8 @@ class QQTests(TestCase):
         self.post.assert_not_called()
 
     def test_main_failure_does_not_print_private_request_data(self):
-        with patch.dict(os.environ, {"QQ_USER_OPENID": RECIPIENT}), patch.object(qq, "morning_text", return_value="早安"):
+        message = qq.MorningMessage("早安", qq.ai_greetings.GeneratedCopy())
+        with patch.dict(os.environ, {"QQ_USER_OPENID": RECIPIENT}), patch.object(qq, "compose_morning_message", return_value=message):
             self.post.side_effect = requests.Timeout(TOKEN + RECIPIENT + SECRET)
             self.assertEqual(qq.main([]), 1)
         for value in (TOKEN, RECIPIENT, SECRET):
