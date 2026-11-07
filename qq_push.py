@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""QQ 早安试收：一次性绑定接收人，随后主动试发。"""
+"""QQ 早安推送：接收人绑定与主动发送。"""
 
 import argparse
 import json
@@ -248,7 +248,7 @@ def morning_text():
     def value(name):
         return fields[name]["value"].strip()
     return "\n".join([
-        "💕 QQ 早安试收",
+        "💕 早安",
         value("top1") + value("top2"),
         "📅 日期：" + value("d"),
         "📍 城市：" + value("c") + " | " + value("w"),

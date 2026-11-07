@@ -1,86 +1,72 @@
-# 微信每日早安推送
+# QQ 每日早安推送
 
-通过 GitHub Actions 每天运行 Python 脚本，向指定微信用户发送早安模板消息，包含杭州天气、恋爱天数、农历生日倒计时、节日提醒和随机文案。
+通过 GitHub Actions 每天向指定 QQ 接收人发送早安消息，包含杭州天气、恋爱天数、农历生日倒计时、节日提醒和随机文案。每日任务只调用 QQ；原微信脚本和配置可保留用于回退。
 
-本次稳定性修复的升级步骤见 [UPGRADE.md](UPGRADE.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)，恢复方法见 [ROLLBACK.md](ROLLBACK.md)。
-
-QQ 独立会话接入目前处于手动试收阶段。机器人提示需要接入 Agent 时，按 [QQ 接收人绑定与试发指南](QQ_SETUP.md) 操作，由本项目的 Python 程序完成对接。日常微信推送与时间设置继续保留。
+操作入口见 [QQ_SETUP.md](QQ_SETUP.md)，升级步骤见 [UPGRADE.md](UPGRADE.md)，变更见 [CHANGELOG.md](CHANGELOG.md)，恢复方法见 [ROLLBACK.md](ROLLBACK.md)。
 
 ## 环境与配置
 
-- Python 3.12，与工作流及本地验证环境一致。
-- 依赖固定在 `requirements.txt`；不需要额外安装测试框架。
-- 微信端需要可用的 AppID、AppSecret、接收者 OpenID 和模板 ID。
+使用 Python 3.12，安装 `requirements-qq.txt`。QQ 机器人由本项目的 Python 程序对接官方接口，无需 AI 模型或全天候运行的 Agent。绑定时临时连接网关，日常发送使用已保存的接收标识。
 
-在仓库的 **Settings → Secrets and variables → Actions → New repository secret** 中配置：
+在仓库 **Settings → Secrets and variables → Actions** 保存：
 
 | Secret | 是否必需 | 用途 |
 | --- | --- | --- |
-| `APP_ID` | 是 | 微信 AppID |
-| `APP_SECRET` | 是 | 微信 AppSecret |
-| `OPEN_ID` | 是 | 消息接收者 |
-| `TEMPLATE_ID` | 是 | 微信模板 ID |
-| `TIANAPI_KEY` | 否 | 天行天气和彩虹屁接口；缺失或不可用时降级推送 |
+| `QQ_APP_ID` | 是 | QQ 机器人的 AppID |
+| `QQ_APP_SECRET` | 是 | QQ 机器人的 AppSecret |
+| `QQ_USER_OPENID` | 是 | 由实际接收人通过 QQ 私下取得的绑定标识，不是 QQ 号码 |
+| `TIANAPI_KEY` | 否 | 天气与彩虹屁接口；缺失时使用天气不可用占位和本地文案 |
 
-脚本启动时检查四个微信必需配置；缺失时以非零退出码结束，不调用微信接口。不要将实际密钥写进代码、提交记录或聊天。
+原微信的 `APP_ID`、`APP_SECRET`、`OPEN_ID`、`TEMPLATE_ID` 可保留，每日 QQ 任务不读取它们。不要在代码、日志、聊天或截图中公开实际密钥与接收标识。
 
-`wechat_love.py` 顶部保留原有城市、恋爱起始日和农历生日配置。本次没有改变这些个人设置，也没有改变现有模板字段。
+个人城市、恋爱起始日和农历生日仍在 `wechat_love.py` 顶部配置，QQ 复用同一套内容生成逻辑。该文件的业务代码与个人设置未改。
 
-## 微信模板字段
+## 两个操作入口
 
-已有模板可以继续使用；字段名必须与代码一致：
-
-| 字段 | 内容 |
+| Actions 工作流 | 手动运行的作用 |
 | --- | --- |
-| `top1`、`top2` | 早安问候 |
-| `d`、`c` | 日期、城市 |
-| `w`、`t` | 天气、温度范围 |
-| `ld`、`bl` | 恋爱天数、农历生日倒计时 |
-| `h` | 节日或节气文案 |
-| `t1`、`t2`、`t3` | 天气提醒 |
-| `q1`、`q2`、`q3`、`q4` | 彩虹屁文案 |
+| 修复验证与消息预览 | 先检查，再等待实际接收人发送“绑定早安”，私下返回该人的接收标识；已有标识也可以换绑 |
+| 每日早安推送 | 向当前 `QQ_USER_OPENID` 主动发送一次完整早安；不启动绑定，不发送微信 |
 
-微信模板中的变量形式为 `{{top1.DATA}}`，其余字段同理。现有分段长度和配色继续沿用，长文案仍可能被截断，手机端最终排版需实际查看。
+接收人加机器人好友后，还需完成绑定、更新 Secret 和试收。绑定过程不会自动覆盖 GitHub Secret。换绑步骤详见 [QQ_SETUP.md](QQ_SETUP.md)。
 
-## 本地安装、测试和预览
+升级分支尚未合并时，两个手动入口均选择 `feat/qq-morning-trial-20261107`；合并后使用 `main`。合并前，正式定时任务继续运行当前 `main` 的微信版本。
 
-先确认 `python --version` 为 3.12。Windows PowerShell 在项目根目录执行：
+## 本地安装与验证
+
+Windows PowerShell 在项目根目录执行：
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-qq.txt
+.\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe wechat_love.py --dry-run
+.\.venv\Scripts\python.exe qq_push.py --dry-run
 ```
 
-Linux/macOS 将上面的 `.\.venv\Scripts\python.exe` 替换为 `.venv/bin/python`。
+Linux/macOS 使用 `.venv/bin/python`。共 65 项隔离测试，不连接真实 QQ、微信或天气接口。预览不连接 QQ；若环境中设置了 `TIANAPI_KEY`，内容生成仍可查询天气和彩虹屁。
 
-`--dry-run` 只生成消息预览，不获取微信 Token、不发送消息，不需要微信凭据。如果设置了 `TIANAPI_KEY`，预览仍会读取天气和彩虹屁；未设置时使用中性的天气占位和本地文案。测试用例全部隔离 HTTP，不会真实发信。
+本地真实绑定命令为 `python qq_push.py --mode bind --timeout 300`，真实主动发送命令为 `python qq_push.py --mode test`。两者都会进行真实 QQ 操作；未准备好接收人时只运行预览。
 
-真实推送命令为 `python wechat_love.py`，仅在准备好正式发送时执行。
+## 定时与排错
 
-## 定时运行与排错
+每日工作流是 `.github/workflows/morning–send.yml`，文件名保留原来的 Unicode 短横。定时表达式仍为 `37 22 * * *`，即 UTC 22:37、次日北京时间 06:37；没有调整时间或触发方式，实际启动仍可能受 GitHub 调度延迟影响。
 
-新增 `.github/workflows/verify.yml`：PR 创建或更新时，在 GitHub 的 Ubuntu 环境运行依赖检查、回归测试与消息预览。该验证工作流不注入微信或天气密钥，不发送消息；实际发送仍使用下述每日推送工作流。
+每次运行先安装依赖、检查核心逻辑，再执行 **发送 QQ 早安**。配置缺失或 QQ 拒绝请求时以退出码 `1` 结束。缺少接收标识时直接失败，不会等待绑定或改发给其他账号。
 
-工作流文件是 `.github/workflows/morning–send.yml`，其中短横为原有的 Unicode 字符。当前定时表达式保持为 `37 22 * * *`：UTC 22:37，即次日北京时间 06:37。没有变更定时、时区或触发方式；实际启动时间仍可能受 GitHub 调度延迟影响。
+- QQ 返回有效消息 ID 才记录接口接受成功；手机实际收件和会话保留需由接收人确认。
+- 绑定和主动发送是不同权限与流程；绑定回复成功不能代替主动试收。
+- 天气不可用时显示“暂不可用”，不填入固定气温，不生成无依据的温度建议。
+- 彩虹屁不可用时使用本地备用文案。
+- 凭据获取与读取请求允许有限重试；发消息的 POST 仅执行一次。超时后先看手机，避免重复补发。
+- 错误不输出原始 Token、接收标识、请求正文或接口响应正文。
 
-每次工作流先安装依赖、运行回归测试，再读取 Secrets 并推送。查看结果的路径：仓库 → **Actions → 每日早安推送 → 某次运行 → 发送消息**。点击 **Run workflow** 会真实发送消息，请留意当天是否已经发送。
+PR 检查只运行测试和内容预览，不读取 QQ Secrets。只有手动运行验证工作流才进入绑定任务；每日任务不接收聊天指令。
 
-- 成功：微信接口返回 `errcode=0`，进程退出码为 `0`。这表示接口已接受请求，手机是否最终展示仍应查看微信。
-- 必需配置缺失、Token 获取失败或发送失败：退出码为 `1`，Actions 可将任务标为失败；可在个人 GitHub 通知设置中开启 Actions 失败通知。
-- 天气失败：显示“暂不可用”，不填入固定气温，也不据此生成具体温度建议；消息仍可发送。
-- 彩虹屁失败：使用本地备用文案，不阻断消息。
-- 读取请求遇到超时、HTTP 429 或 5xx 时最多尝试三次；普通 HTTP 4xx 不重试。
-- 发送 POST 不自动重试。超时可能发生在微信已经接收请求之后，请先查看收件端，再决定是否补发。
+## 日期规则与兼容脚本
 
-日志只输出配置名称和错误码，不输出实际密钥、Token URL 或失败请求的完整载荷。成功日志保留原有消息预览，因此公开仓库的 Actions 日志仍可能展示个人文案。
-
-## 日期规则与当前范围
-
-- 日期统一按北京时间生成，一条消息使用同一个日期快照。
-- 农历生日及节日从当天所属农历年开始查找，修复春节前腊八、小年等跨年计算错误。
-- 农历三十遇到小月时按廿九提醒；不支持的日期直接报错，不再假定为元旦。
-- 农历转换沿用 `zhdate` 的 1900—2100 年数据；普通生日按非闰月处理。
-- 雨雪与温度提醒可以同时出现，例如雨天带伞添衣、雪天保暖防滑。
-- 节气近似公式、固定假期文案、原有问候语长度策略仍沿用；没有接入每年调休表，也没有新增节气算法。
+- 日期统一使用北京时间，一条消息共用一个日期快照。
+- 农历生日和节日从当天所属农历年查找；农历三十遇到小月按廿九提醒。
+- 农历转换沿用 `zhdate` 的 1900—2100 年数据，普通生日按非闰月处理。
+- 雨雪和温度提醒可同时出现；节气近似公式、固定假期文案与原有个人配置继续沿用。
+- `wechat_love.py` 与 `requirements.txt` 保留微信稳定版内容；恢复微信每日发送按 [回退指南](ROLLBACK.md) 执行，不需要重建原微信模板。

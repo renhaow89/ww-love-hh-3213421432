@@ -271,6 +271,20 @@ class QQTests(TestCase):
         bind.assert_not_called()
         wechat.assert_not_called()
 
+    def test_explicit_binding_does_not_send_to_existing_recipient(self):
+        with patch.dict(os.environ, {"QQ_USER_OPENID": RECIPIENT}), patch.object(qq, "bind_receiver") as bind, patch.object(qq.QQClient, "send_text") as send:
+            self.assertEqual(qq.main(["--mode", "bind"]), 0)
+        bind.assert_called_once()
+        send.assert_not_called()
+
+    def test_daily_mode_without_recipient_does_not_start_binding(self):
+        with patch.object(qq, "bind_receiver") as bind, patch.object(qq, "morning_text") as text, patch.object(qq.QQClient, "send_text") as send:
+            self.assertEqual(qq.main(["--mode", "test"]), 1)
+        bind.assert_not_called()
+        text.assert_not_called()
+        send.assert_not_called()
+        self.post.assert_not_called()
+
     def test_preview_does_not_need_credentials_or_connect_qq(self):
         with patch.dict(os.environ, {"QQ_APP_ID": "", "QQ_APP_SECRET": ""}), patch.object(qq, "morning_text", return_value="早安预览"):
             self.assertEqual(qq.main(["--dry-run"]), 0)
