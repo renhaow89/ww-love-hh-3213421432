@@ -4,6 +4,8 @@
 
 本次稳定性修复的升级步骤见 [UPGRADE.md](UPGRADE.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)，恢复方法见 [ROLLBACK.md](ROLLBACK.md)。
 
+QQ 独立会话接入目前处于手动试收阶段。机器人提示需要接入 Agent 时，按 [QQ 接收人绑定与试发指南](QQ_SETUP.md) 操作，由本项目的 Python 程序完成对接。日常微信推送与时间设置继续保留。
+
 ## 环境与配置
 
 - Python 3.12，与工作流及本地验证环境一致。

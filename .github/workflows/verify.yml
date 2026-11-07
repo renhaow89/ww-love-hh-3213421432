@@ -20,10 +20,12 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-qq.txt
 
       - name: 安装依赖
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements-qq.txt
 
       - name: 检查依赖
         run: python -m pip check
@@ -33,3 +35,35 @@ jobs:
 
       - name: 消息预览
         run: python wechat_love.py --dry-run
+
+      - name: QQ 消息预览
+        run: python qq_push.py --dry-run
+
+  qq_trial:
+    name: QQ 接收人绑定与试发
+    if: github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-qq.txt
+
+      - name: 安装 QQ 试收依赖
+        run: python -m pip install -r requirements-qq.txt
+
+      - name: QQ 绑定或早安试发
+        env:
+          QQ_APP_ID: ${{ secrets.QQ_APP_ID }}
+          QQ_APP_SECRET: ${{ secrets.QQ_APP_SECRET }}
+          QQ_USER_OPENID: ${{ secrets.QQ_USER_OPENID }}
+          TIANAPI_KEY: ${{ secrets.TIANAPI_KEY }}
+        run: python -u qq_push.py --mode trial --timeout 300
