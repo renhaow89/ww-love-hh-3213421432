@@ -15,11 +15,31 @@
 | `QQ_APP_ID` | 是 | QQ 机器人的 AppID |
 | `QQ_APP_SECRET` | 是 | QQ 机器人的 AppSecret |
 | `QQ_USER_OPENID` | 是 | 由实际接收人通过 QQ 私下取得的绑定标识，不是 QQ 号码 |
+| `DEEPSEEK_API_KEY` | 启用 AI 时必需 | DeepSeek 官方 API 密钥；未配置时使用原有文案 |
 | `TIANAPI_KEY` | 否 | 天气与彩虹屁接口；缺失时使用天气不可用占位和本地文案 |
 
 原微信的 `APP_ID`、`APP_SECRET`、`OPEN_ID`、`TEMPLATE_ID` 可保留，每日 QQ 任务不读取它们。不要在代码、日志、聊天或截图中公开实际密钥与接收标识。
 
 个人城市、恋爱起始日和农历生日仍在 `wechat_love.py` 顶部配置，QQ 复用同一套内容生成逻辑。该文件的业务代码与个人设置未改。
+
+## DeepSeek 三段问候
+
+保留原 QQ 消息栏目，将开头问候、天气关心和小情话交给 DeepSeek 生成，每段尽量 20～40 字、最多 60 个字符，完整插入 QQ 正文。日期、天气数据、恋爱天数、农历生日和原有节日、节气、隐藏彩蛋规则仍由原程序决定。
+
+在 GitHub Secrets 保存 `DEEPSEEK_API_KEY` 后，真实发送时默认使用官方 `deepseek-flash` 非思考模式，一次请求生成三个 JSON 字段。正常每天调用一次；只有文案重复时最多再生成一次，网络失败或余额不足不自动重试 AI。
+
+- 普通日子按日期轮换 14 个主题，特别日子按原程序提供的状态写专属问候，不将“下个节日倒计时”当成当天过节。
+- 三段分别校验。空白、过长、格式异常、明显与已知天气不符的段落会单独使用原文案；天气数据缺失时，天气关心沿用中性备用提醒。
+- 先验证 QQ 凭据，再调用 AI；QQ 身份验证失败时不生成收费文案。
+- AI 不重新计算或复述数字，不编造共同经历或她的工作安排。固定称呼和事实栏目保留，三个 AI 段落不再按微信模板切成短字段。
+- 不向 AI 提供 QQ 接收标识、微信或 QQ 凭据；公开日志只显示来源计数和通用状态，不记录密钥、模型响应或新生成的文案正文。
+- QQ 接口确认接受后才记录日期和文字指纹。通过 Actions 缓存保留最近 14 天用于检查文字重复，不保存正文，不每日提交到仓库；缓存不可用时继续发送。指纹去重不等于语义去重，近似表达仍可能出现。
+
+暂时关闭 AI：在 **Settings → Secrets and variables → Actions → Variables** 新增或修改 `AI_ENABLED` 为 `false`。下次发送使用原来的三段文案，QQ 收件人与定时保持不变。重新启用改为 `true` 即可。
+
+`python qq_push.py --dry-run` 始终只展示原文案，不调用收费 AI，也不写去重记录。真实 AI 试发需在 **每日早安推送** 手动选择 `feat/deepseek-greetings-20261107` 分支运行一次，并在 QQ 私下检查三段效果；它会真实调用 AI 并向当前接收人发信。满意后再启用到 `main`。
+
+接口依据：[DeepSeek JSON 输出](https://api-docs.deepseek.com/guides/json_mode/)、[思考模式开关](https://api-docs.deepseek.com/guides/thinking_mode/)。
 
 ## 两个操作入口
 
@@ -30,7 +50,7 @@
 
 接收人加机器人好友后，还需完成绑定、更新 Secret 和试收。绑定过程不会自动覆盖 GitHub Secret。换绑步骤详见 [QQ_SETUP.md](QQ_SETUP.md)。
 
-升级分支尚未合并时，两个手动入口均选择 `feat/qq-morning-trial-20261107`；合并后使用 `main`。合并前，正式定时任务继续运行当前 `main` 的微信版本。
+常规操作选择 `main`。测试尚未合并的升级时选择对应功能分支；DeepSeek 本次试用分支为 `feat/deepseek-greetings-20261107`，合并前正式每日任务继续运行已启用的 QQ 稳定版。
 
 ## 本地安装与验证
 
@@ -44,7 +64,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe qq_push.py --dry-run
 ```
 
-Linux/macOS 使用 `.venv/bin/python`。共 65 项隔离测试，不连接真实 QQ、微信或天气接口。预览不连接 QQ；若环境中设置了 `TIANAPI_KEY`，内容生成仍可查询天气和彩虹屁。
+Linux/macOS 使用 `.venv/bin/python`。共 97 项隔离测试，不连接真实 QQ、微信或天气接口。预览不连接 QQ；若环境中设置了 `TIANAPI_KEY`，内容生成仍可查询天气和彩虹屁。
 
 本地真实绑定命令为 `python qq_push.py --mode bind --timeout 300`，真实主动发送命令为 `python qq_push.py --mode test`。两者都会进行真实 QQ 操作；未准备好接收人时只运行预览。
 
@@ -59,7 +79,7 @@ Linux/macOS 使用 `.venv/bin/python`。共 65 项隔离测试，不连接真实
 - 天气不可用时显示“暂不可用”，不填入固定气温，不生成无依据的温度建议。
 - 彩虹屁不可用时使用本地备用文案。
 - 凭据获取与读取请求允许有限重试；发消息的 POST 仅执行一次。超时后先看手机，避免重复补发。
-- 错误不输出原始 Token、接收标识、请求正文或接口响应正文。
+- 错误不输出原始 Token、接收标识、请求正文或接口响应正文；AI 失败使用原有文案，不影响 QQ 发送。
 
 PR 检查只运行测试和内容预览，不读取 QQ Secrets。只有手动运行验证工作流才进入绑定任务；每日任务不接收聊天指令。
 

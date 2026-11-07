@@ -7,11 +7,13 @@ import os
 import re
 import sys
 import time
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import requests
 
 import wechat_love
+import ai_greetings
 
 
 API_BASE = "https://api.bot.qq.com"
@@ -78,6 +80,8 @@ class QQClient:
                     time.sleep(attempt + 1)
                     continue
                 detail = f"，错误码 {code}" if code is not None else ""
+                if label == "QQ 身份验证" and code == 100016:
+                    detail += "；请核对 QQ_APP_ID 和 QQ_APP_SECRET 是否与当前机器人后台一致"
                 raise QQPushError(f"{label}失败：HTTP {response.status_code}{detail}")
             return result
         raise QQPushError(f"{label}失败")
@@ -243,22 +247,44 @@ def bind_receiver(client, timeout_seconds=300, *, connection_factory=GatewayConn
         connection.close()
 
 
-def morning_text():
+@dataclass
+class MorningMessage:
+    text: str
+    ai_copy: ai_greetings.GeneratedCopy
+
+
+def compose_morning_message(*, use_ai=True):
     fields = wechat_love.build_message()["data"]
     def value(name):
         return fields[name]["value"].strip()
-    return "\n".join([
+    generated = ai_greetings.generate(fields) if use_ai else ai_greetings.GeneratedCopy()
+    greeting = value("top1") + value("top2")
+    if "greeting" in generated.segments:
+        salutation = "早安，我最爱的宝宝！"
+        before, marker, _ = greeting.partition(salutation)
+        greeting = (before + marker if marker else salutation) + generated.segments["greeting"]
+    care = generated.segments.get("weather_care", value("t1") + value("t2") + value("t3"))
+    love = generated.segments.get("love_note", "".join(value(name) for name in ("q1", "q2", "q3", "q4")))
+    text = "\n".join([
         "💕 早安",
-        value("top1") + value("top2"),
+        greeting,
         "📅 日期：" + value("d"),
         "📍 城市：" + value("c") + " | " + value("w"),
         "🌡️ 气温：" + value("t"),
         "💖 恋爱打卡：第 " + value("ld") + " 天",
         "🎂 生日倒数：" + value("bl") + " 天",
         "⭐ " + value("h"),
-        "🔔 " + value("t1") + value("t2") + value("t3"),
-        "💌 " + "".join(value(name) for name in ("q1", "q2", "q3", "q4")),
+        "🔔 " + care,
+        "💌 " + love,
     ])
+    if use_ai:
+        print(f"文案来源：AI {len(generated.segments)}/3 栏，其余使用原有文案", flush=True)
+    return MorningMessage(text, generated)
+
+
+def morning_text():
+    # 预览与 PR 检查始终不调用收费 AI 接口，也不写去重记录。
+    return compose_morning_message(use_ai=False).text
 
 
 def main(argv=None):
@@ -279,8 +305,12 @@ def main(argv=None):
             bind_receiver(client, args.timeout)
         else:
             _validate_recipient(recipient)
-            client.send_text(recipient, morning_text())
-            print("✅ QQ 接口已接受早安试发，请在手机上确认消息与会话是否保留")
+            # 先确认 QQ 能正常登录，避免凭据失效时仍产生 AI 调用费用。
+            client.access_token()
+            message = compose_morning_message()
+            client.send_text(recipient, message.text)
+            ai_greetings.record_sent(message.ai_copy)
+            print("✅ QQ 接口已接受早安消息，请在手机上确认消息与会话是否保留")
         return 0
     except (QQPushError, ValueError) as exc:
         # ValueError 可能来自日期配置；不记录包含请求数据的原始异常。

@@ -31,6 +31,14 @@ jobs:
 
       - name: 验证核心逻辑
         run: python -m unittest discover -s tests -v
+
+      - name: 恢复近期文案指纹
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: .state/ai-greetings.json
+          key: ai-greetings-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ai-greetings-${{ github.ref_name }}-
       
       - name: 发送 QQ 早安
         env:
@@ -38,4 +46,14 @@ jobs:
           QQ_APP_SECRET: ${{ secrets.QQ_APP_SECRET }}
           QQ_USER_OPENID: ${{ secrets.QQ_USER_OPENID }}
           TIANAPI_KEY: ${{ secrets.TIANAPI_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_ENABLED: ${{ vars.AI_ENABLED || 'true' }}
         run: python -u qq_push.py --mode test
+
+      - name: 保存已发送文案指纹
+        if: success() && hashFiles('.state/ai-greetings.json') != ''
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: .state/ai-greetings.json
+          key: ai-greetings-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
