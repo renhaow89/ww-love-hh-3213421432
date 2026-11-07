@@ -285,7 +285,7 @@ class AITests(TestCase):
     def test_successful_qq_send_records_history_after_acceptance(self):
         generated = ai.GeneratedCopy(dict(COPY))
         parent = Mock()
-        with patch.object(qq, "compose_morning_message", return_value=qq.MorningMessage("测试早安", generated)), patch.object(qq.QQClient, "send_text", return_value="accepted") as send, patch.object(ai, "record_sent") as save:
+        with patch.object(qq, "compose_morning_message", return_value=qq.MorningMessage("测试早安", generated)), patch.object(qq.QQClient, "access_token", return_value="fake-token"), patch.object(qq.QQClient, "send_text", return_value="accepted") as send, patch.object(ai, "record_sent") as save:
             parent.attach_mock(send, "send")
             parent.attach_mock(save, "save")
             self.assertEqual(qq.main([]), 0)
@@ -294,9 +294,16 @@ class AITests(TestCase):
 
     def test_rejected_qq_send_does_not_record_generated_text(self):
         generated = ai.GeneratedCopy(dict(COPY))
-        with patch.object(qq, "compose_morning_message", return_value=qq.MorningMessage("测试早安", generated)), patch.object(qq.QQClient, "send_text", side_effect=qq.QQPushError("QQ 拒绝")), patch.object(ai, "record_sent") as save:
+        with patch.object(qq, "compose_morning_message", return_value=qq.MorningMessage("测试早安", generated)), patch.object(qq.QQClient, "access_token", return_value="fake-token"), patch.object(qq.QQClient, "send_text", side_effect=qq.QQPushError("QQ 拒绝")), patch.object(ai, "record_sent") as save:
             self.assertEqual(qq.main([]), 1)
         save.assert_not_called()
+
+    def test_qq_auth_failure_stops_before_paid_ai_and_history(self):
+        with patch.object(qq.QQClient, "access_token", side_effect=qq.QQPushError("QQ 凭据无效")), patch.object(qq, "compose_morning_message") as compose, patch.object(ai, "record_sent") as save:
+            self.assertEqual(qq.main([]), 1)
+        compose.assert_not_called()
+        save.assert_not_called()
+        self.post.assert_not_called()
 
     def test_binding_does_not_generate_ai_copy(self):
         with patch.object(qq, "bind_receiver"), patch.object(ai, "generate") as generate:

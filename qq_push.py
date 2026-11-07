@@ -80,6 +80,8 @@ class QQClient:
                     time.sleep(attempt + 1)
                     continue
                 detail = f"，错误码 {code}" if code is not None else ""
+                if label == "QQ 身份验证" and code == 100016:
+                    detail += "；请核对 QQ_APP_ID 和 QQ_APP_SECRET 是否与当前机器人后台一致"
                 raise QQPushError(f"{label}失败：HTTP {response.status_code}{detail}")
             return result
         raise QQPushError(f"{label}失败")
@@ -303,6 +305,8 @@ def main(argv=None):
             bind_receiver(client, args.timeout)
         else:
             _validate_recipient(recipient)
+            # 先确认 QQ 能正常登录，避免凭据失效时仍产生 AI 调用费用。
+            client.access_token()
             message = compose_morning_message()
             client.send_text(recipient, message.text)
             ai_greetings.record_sent(message.ai_copy)

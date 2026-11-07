@@ -105,6 +105,8 @@ class QQTests(TestCase):
         with self.assertRaises(qq.QQPushError) as caught:
             self.client.access_token()
         self.assertIn("100016", str(caught.exception))
+        self.assertIn("QQ_APP_ID", str(caught.exception))
+        self.assertIn("QQ_APP_SECRET", str(caught.exception))
         self.assertNotIn(SECRET, str(caught.exception))
 
     def test_token_requires_nonempty_string(self):
@@ -266,7 +268,7 @@ class QQTests(TestCase):
 
     def test_trial_with_recipient_uses_active_send_only(self):
         message = qq.MorningMessage("早安试收", qq.ai_greetings.GeneratedCopy())
-        with patch.dict(os.environ, {"QQ_USER_OPENID": RECIPIENT}), patch.object(qq, "compose_morning_message", return_value=message), patch.object(qq.QQClient, "send_text", return_value="sent") as send, patch.object(qq, "bind_receiver") as bind, patch.object(qq.wechat_love, "send_message") as wechat:
+        with patch.dict(os.environ, {"QQ_USER_OPENID": RECIPIENT}), patch.object(qq, "compose_morning_message", return_value=message), patch.object(qq.QQClient, "access_token", return_value=TOKEN), patch.object(qq.QQClient, "send_text", return_value="sent") as send, patch.object(qq, "bind_receiver") as bind, patch.object(qq.wechat_love, "send_message") as wechat:
             self.assertEqual(qq.main([]), 0)
         send.assert_called_once_with(RECIPIENT, "早安试收")
         bind.assert_not_called()
